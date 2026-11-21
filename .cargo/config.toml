@@ -1,0 +1,3 @@
+[env]
+# Avoid Windows DX12 RequestDeviceError(Device(Lost)) in headless egui_kittest runs.
+WGPU_BACKEND = { value = "vulkan", force = false }

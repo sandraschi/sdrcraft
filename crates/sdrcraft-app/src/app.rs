@@ -173,6 +173,33 @@ fn card_frame(ui: &mut egui::Ui, add_contents: impl FnOnce(&mut egui::Ui)) {
         .show(ui, add_contents);
 }
 
+/// One band on the Listen page. Returns true when its button is pressed.
+fn listen_card(
+    ui: &mut egui::Ui,
+    title: &str,
+    range: &str,
+    blurb: &str,
+    action: &str,
+    color: egui::Color32,
+) -> bool {
+    let mut go = false;
+    egui::Frame::group(ui.style())
+        .corner_radius(egui::CornerRadius::same(12))
+        .stroke(egui::Stroke::new(1.0, color))
+        .inner_margin(egui::Margin::same(10))
+        .show(ui, |ui| {
+            ui.set_min_width(210.0);
+            ui.set_max_width(250.0);
+            ui.colored_label(color, egui::RichText::new(title).strong());
+            ui.small(range);
+            ui.label(blurb);
+            if ui.button(action).clicked() {
+                go = true;
+            }
+        });
+    go
+}
+
 /// Hero KPI: small label over a big colored value.
 fn hero_kpi(ui: &mut egui::Ui, label: &str, value: &str, color: egui::Color32) {
     ui.vertical(|ui| {
@@ -229,7 +256,7 @@ enum Page {
 impl Page {
     fn label(&self) -> &'static str {
         match self {
-            Self::Overview => "Overview",
+            Self::Overview => "Listen",
             Self::Spectrum => "Spectrum",
             Self::Waterfall => "Waterfall",
             Self::Stations => "Stations",
@@ -274,6 +301,7 @@ enum LoadState {
 
 enum Job {
     Status(Value),
+    Decode(Value),
     Devices(Value),
     Spectrum { freqs: Vec<f64>, power: Vec<f64> },
     Stations(Value),
@@ -360,6 +388,7 @@ pub struct SdrApp {
     help_tab: usize,
     lang_de: bool,
     overlay: Overlay,
+    decode_report: String,
 }
 
 impl SdrApp {
@@ -442,6 +471,7 @@ impl SdrApp {
             help_tab: 0,
             lang_de: false,
             overlay: Overlay::None,
+            decode_report: String::new(),
         };
         app.push_log("boot: UI state loaded");
         app.spawn_vault_probe();
@@ -545,6 +575,7 @@ impl SdrApp {
             help_tab: 0,
             lang_de: false,
             overlay: Overlay::None,
+            decode_report: String::new(),
         }
     }
 
@@ -583,6 +614,16 @@ impl SdrApp {
         while let Ok(job) = self.rx.try_recv() {
             self.pending = self.pending.saturating_sub(1);
             match job {
+                Job::Decode(value) => {
+                    let morse = value.get("morse").and_then(Value::as_str).unwrap_or("");
+                    let rtty = value.get("rtty").and_then(Value::as_str).unwrap_or("");
+                    let aprs = value.get("aprs").and_then(Value::as_str).unwrap_or("");
+                    let reason = value.get("reason").and_then(Value::as_str).unwrap_or("");
+                    self.decode_report =
+                        format!("Morse: {morse}\nRTTY: {rtty}\nAPRS: {aprs}\n{reason}");
+                    self.show_raw(&value);
+                    self.note("decoder tapes copied");
+                }
                 Job::Status(value) => {
                     self.status_json = value.clone();
                     self.show_raw(&value);
@@ -671,6 +712,10 @@ impl SdrApp {
 
     fn spawn_status(&mut self) {
         self.spawn(|| async { Job::Status(dispatch(Command::Status).await) });
+    }
+
+    fn spawn_decode(&mut self) {
+        self.spawn(|| async { Job::Decode(dispatch(Command::DecodeCopy).await) });
     }
 
     fn spawn_devices(&mut self) {
@@ -1030,11 +1075,7 @@ impl eframe::App for SdrApp {
         egui::Panel::top("sdr_topbar").show(ui, |ui| {
             ui.horizontal(|ui| {
                 ui.strong("SDRCraft");
-                ui.small(if self.lang_de {
-                    "Empfang"
-                } else {
-                    "Receive"
-                });
+                ui.small(if self.lang_de { "Empfang" } else { "Receive" });
                 ui.separator();
                 theme_toggle_button(ui, &mut self.dark_mode);
                 if self.dark_mode != self.applied_dark {
@@ -1263,37 +1304,146 @@ impl SdrApp {
         });
     }
 
+    fn open_listen(&mut self, mhz: f64) {
+        self.tune_mhz = mhz;
+        self.spawn_tune(mhz);
+        self.spawn_spectrum();
+        self.page = Page::Spectrum;
+    }
+
     fn page_overview(&mut self, ui: &mut egui::Ui) {
-        ui.small("SOFTWARE DEFINED RADIO · MCP");
-        ui.heading("Turn a USB stick into a radio lab");
-        ui.label("SDR means your computer does the tuning — not a fixed FM chip. Plug in a dongle, see live spectrum and waterfall, listen to stations, and let AI control it through chat.");
-        ui.small("No dongle? Mock mode still shows FFT, waterfall, and demo audio.");
-        ui.horizontal(|ui| {
-            if ui.button("Open Spectrum").clicked() {
-                self.page = Page::Spectrum;
+        ui.heading("What you can hear");
+        ui.label("A notebook, the stick, and the whip from the box will find a few strong FM stations and then look empty. That is the antenna and the band. Pick one. The stick tunes there and the spectrum opens. No dongle: mock data still draws.");
+        ui.horizontal_wrapped(|ui| {
+            if listen_card(
+                ui,
+                "FM broadcast",
+                "88-108 MHz",
+                "A few loud local stations on the whip. Extend it and move the stick to a window.",
+                "Tune 98 MHz",
+                EMERALD,
+            ) {
+                self.scan_start = 88.0;
+                self.scan_end = 108.0;
+                self.scan_step = 0.2;
+                self.open_listen(98.0);
             }
-            if ui.button("New here? Read Help").clicked() {
+            if listen_card(
+                ui,
+                "Airband",
+                "118-137 MHz",
+                "Aircraft and towers, still plain AM. Some countries treat this as non-public. A vertical whip helps.",
+                "Tune 125 MHz",
+                SKY,
+            ) {
+                self.open_listen(125.0);
+            }
+            if listen_card(
+                ui,
+                "Aircraft beacons",
+                "1090 MHz",
+                "ADS-B. The short whip is finally about the right length. You see the carriers here.",
+                "Tune 1090 MHz",
+                AMBER,
+            ) {
+                self.open_listen(1090.0);
+            }
+            if listen_card(
+                ui,
+                "Amateur 2 m",
+                "144-146 MHz",
+                "Hams, in the clear, on a vertical. This build only receives.",
+                "Tune 145.5 MHz",
+                VIOLET,
+            ) {
+                self.open_listen(145.5);
+            }
+            if listen_card(
+                ui,
+                "Text beacons",
+                "144.800 MHz",
+                "APRS in Europe: slow public text and positions, meant to be read. Tune shows the bursts. The button below copies a practice frame, not the air.",
+                "Tune 144.8 MHz",
+                EMERALD,
+            ) {
+                self.help_tab = 7;
+                self.open_listen(144.8);
+            }
+            if listen_card(
+                ui,
+                "Morse and teletype",
+                "CW and RTTY",
+                "The decoders copy a practice tape. Live letters need the stick's audio, which is not in the window yet.",
+                "Copy a tape",
+                AMBER,
+            ) {
+                self.help_tab = 7;
+                self.spawn_decode();
+            }
+            if listen_card(
+                ui,
+                "Medium wave",
+                "0.5-1.7 MHz",
+                "AM broadcast. An RTL-SDR Blog v4 hears this. A plain R820T2 stick does not. Night is louder.",
+                "Tune 0.909 MHz",
+                ACCENT,
+            ) {
+                self.open_listen(0.909);
+            }
+            if listen_card(
+                ui,
+                "Shortwave",
+                "3-30 MHz",
+                "Same v4 path as medium wave. The whip is still deaf here. A wire is the antenna.",
+                "Tune 5.975 MHz",
+                ACCENT,
+            ) {
+                self.open_listen(5.975);
+            }
+            if listen_card(
+                ui,
+                "Longwave",
+                "0.15-0.28 MHz",
+                "Below 0.5 MHz on the stick. A Ham It Up adds 125 MHz: BBC 198 kHz is tuned as 125.198, AM.",
+                "Tune 125.198",
+                SKY,
+            ) {
+                self.gnuradio_mode = "am".to_string();
+                self.gnuradio_mhz = 125.198;
+                self.open_listen(125.198);
+            }
+            if listen_card(
+                ui,
+                "Police chatter",
+                "Mostly gone",
+                "The movie version is analog FM. European police voice is encrypted TETRA. This app does not decode it.",
+                "Read why",
+                RED,
+            ) {
+                self.help_tab = 6;
                 self.page = Page::Help;
             }
-            if ui.button("Try AI Command").clicked() {
-                self.page = Page::Chat;
+            if listen_card(
+                ui,
+                "Terrestrial TV",
+                "About 470-694 MHz",
+                "Digital only. You may see a wide hump. This stick cannot turn it into a picture.",
+                "Look at 490 MHz",
+                SLATE,
+            ) {
+                self.help_tab = 6;
+                self.open_listen(490.0);
             }
         });
         ui.separator();
-        ui.horizontal(|ui| {
-            card_frame(ui, |ui| {
-                ui.strong("Listen");
-                ui.small("Tune FM (e.g. 100 MHz), hear audio in the browser");
-            });
-            card_frame(ui, |ui| {
-                ui.strong("See signals");
-                ui.small("FFT spectrum + scrolling waterfall");
-            });
-            card_frame(ui, |ui| {
-                ui.strong("Ask AI");
-                ui.small("list devices, spectrum, tune bbc longwave");
-            });
-        });
+        ui.strong("Decoders");
+        ui.small("Practice tapes only. Nothing on the air is copied until the stick's samples are in the window.");
+        if ui.button("Copy Morse, RTTY, and APRS").clicked() {
+            self.spawn_decode();
+        }
+        if !self.decode_report.is_empty() {
+            ui.label(&self.decode_report);
+        }
         ui.separator();
         self.demo_banner(ui);
         ui.separator();
@@ -1382,10 +1532,11 @@ impl SdrApp {
         ui.separator();
         ui.horizontal(|ui| {
             ui.label("Center freq (MHz)");
+            let tune_speed = if self.tune_mhz < 30.0 { 0.001 } else { 0.5 };
             ui.add(
                 egui::DragValue::new(&mut self.tune_mhz)
-                    .speed(0.5)
-                    .range(24.0..=1766.0),
+                    .speed(tune_speed)
+                    .range(0.5..=1766.0),
             );
             if ui.button("Tune").clicked() {
                 self.spawn_tune(self.tune_mhz);
@@ -1665,10 +1816,11 @@ impl SdrApp {
                                 );
                             }
                         });
+                    let demod_speed = if self.gnuradio_mhz < 30.0 { 0.001 } else { 0.5 };
                     ui.add(
                         egui::DragValue::new(&mut self.gnuradio_mhz)
-                            .speed(0.5)
-                            .range(24.0..=1766.0),
+                            .speed(demod_speed)
+                            .range(0.5..=1766.0),
                     );
                     if ui.button("Start demod").clicked() {
                         self.spawn_gnuradio_start(self.gnuradio_mhz, self.gnuradio_mode.clone());
@@ -1904,6 +2056,9 @@ impl SdrApp {
             "Stations",
             "Mock and Demo",
             "Buying a dongle",
+            "Antennas",
+            "Police and TV",
+            "Morse and text",
             "HackRF and TX safety",
         ];
         ui.horizontal_wrapped(|ui| {
@@ -1916,7 +2071,7 @@ impl SdrApp {
         ui.separator();
         match self.help_tab {
             0 => {
-                ui.small("Enter a frequency in MHz on the Spectrum page (24-1766 MHz) and press Tune. Named stations work on the Stations page: press Tune on any row, or use Quick Presets for longwave.");
+                ui.small("Enter a frequency in MHz on the Spectrum page (0.5-1766) and press Tune. 0.5 to 24 MHz needs an RTL-SDR Blog v4. A plain R820T2 stick, including the Nooelec Nano 2 Plus, starts near 25 MHz. With a Ham It Up, add 125 MHz and use AM: BBC 198 kHz is 125.198. Named stations are on the Stations page.");
             }
             1 => {
                 ui.small("Refresh spectrum draws the 2048-pt FFT in dB. The peak readout shows the strongest bin. Waterfall accumulates the last 60 rows, newest at the bottom.");
@@ -1928,7 +2083,33 @@ impl SdrApp {
                 ui.small("Without a dongle the app runs on synthetic IQ: four demo tones plus drift. Spectrum, waterfall, scan and presets all work. Force it via device mock-mode.");
             }
             4 => {
-                ui.small("Any RTL2832U + R820T2 stick works (24 MHz-1.766 GHz). Install WinUSB via Zadig, then serve it with rtl_tcp on port 1234 or run the GNU Radio sidecar from the legacy compose file.");
+                ui.small("A plain RTL2832U + R820T2 stick covers about 25 MHz to 1.7 GHz. The Nooelec NESDR Nano 2 Plus is that stick in a 24 x 21 x 8 mm shell, with a 0.5 ppm TCXO and an MCX antenna jack. An RTL-SDR Blog v4 adds about 0.5-24 MHz. A Ham It Up v1.3 or Nano, sold separately, hears 100 kHz to 65 MHz by shifting everything up 125 MHz. It needs its own USB power, and passthrough mode for FM and airband. Install WinUSB via Zadig, then serve the stick with rtl_tcp on port 1234.");
+            }
+            5 => {
+                ui.label("The whip in the box hears a few strong local FM stations and sometimes nearby aircraft. It is a poor size for shortwave, it sits in the laptop's noise, and a vertical rod mismatches many horizontal FM broadcasts. Extend it, and move the stick to a window on a USB extension, before you decide the dongle is deaf.");
+                ui.label("A dipole kit (two telescopic rods) is the indoor upgrade. Each side is about a quarter wave: 75 cm near 100 MHz, about 7 cm near 1090 MHz. An outdoor vertical or a discone is the VHF/UHF step (airband, repeaters, 1090 MHz).");
+                ui.label("Wire between trees is the shortwave antenna. A dipole is two equal wires fed in the middle, about 150 / f(MHz) metres end to end. An inverted-V is that dipole with the centre high and the ends low. One long wire to a tree works too if it has a counterpoise.");
+                ui.label("A Yagi is a boom of parallel rods that hears best from the front. A log-periodic looks similar and covers a wider band. A rhombic is four long wires in a diamond (a rhombus), tens of metres on a side, aimed at one horizon. A small loop is the indoor HF answer when you cannot hang wire. One antenna will not be good at 7 MHz and at 1090 MHz.");
+                ui.small("Full note: docs/ANTENNAS.md. This build only receives.");
+            }
+            6 => {
+                ui.heading("Police chatter");
+                ui.label("It is mostly not a thing anymore, and where the voice is still in the clear the law is local. In the Hollywood era, police, fire, and ambulances used ordinary analog FM. A scanner could follow a pursuit. Many US fire and EMS channels are still like that, and some smaller police departments still are. Large US cities have moved to digital trunking (P25), and a growing share of police channels are encrypted, so a whip hears hiss or nothing. Europe went further: police voice in Austria, Germany, and most of the EU is TETRA, and it is encrypted. You will not hear units being dispatched.");
+                ui.label("Listening to encrypted police radio, or trying to remove that encryption, is unlawful. This program has no decoder for TETRA or for encrypted P25, and it will not grow one. Broadcast FM, shortwave broadcasts, and amateur radio are the listens that stay both audible and ordinary. Airband is technically open AM; some countries still treat it as a private communication. Check before you leave it running.");
+                ui.heading("Terrestrial TV");
+                ui.label("Analog television is off the air in Europe and in the United States. What is left is digital: DVB-T or DVB-T2 in Europe, ATSC in North America. A channel is about 6 to 8 MHz wide. This stick stably samples about 2.4 MHz, so it can show you a raised hump in the UHF TV band and cannot assemble a picture. The chip began life as a TV tuner. The WinUSB driver that makes it a software radio replaces the TV driver. Free-to-air television wants that TV mode, or a separate tuner. Pay TV is encrypted on top of the broadcast. This app does not remove that either.");
+                ui.small("Notes: docs/POLICE_AND_TV.md.");
+            }
+            7 => {
+                ui.heading("Morse and teletype");
+                ui.label("Morse and RTTY are decoded from a practice tape on the Listen page. The same functions will read the air when the stick's audio is in the window. That path is not here yet, so the report says the copy is not live. PSK31, FT8, and JS8 are still for fldigi and WSJT-X. Most of that traffic is below 24 MHz. A Blog v4 can tune there. A plain R820T2 stick cannot.");
+                ui.heading("The phone in Tokyo");
+                ui.label("A garakei TV antenna is for 1seg, the mobile slice of Japanese digital terrestrial TV. Tokyo's ISDB-T stations are still on the air from Skytree. Analog TV ended in 2011. In 2026 the stations dropped the 1seg news-and-weather data pages. The program picture continues, including TOKYO MX. One segment is narrow enough that a software radio could capture it. This app has no ISDB-T demodulator, so it will not show the picture. The phone itself still can, in the Tokyo coverage area, if its tuner still works.");
+                ui.heading("Walkie-talkies");
+                ui.label("License-free handhelds in Austria are PMR446, around 446 MHz. The analog ones are plain FM and only carry a short distance, so you hear a worksite or a family if they are nearby. That is a private conversation, not a broadcast. Digital handhelds are not intelligible. This app does not scan them.");
+                ui.heading("Slow text in Austria");
+                ui.label("Three different webs get called this. APRS on 144.800 MHz is the open amateur beacon net: positions and short text, published on purpose. MeshCom is the OeVSV LoRa mesh on 70 cm, also unencrypted and identified by callsign, bridged to APRS. Meshtastic on 868 MHz is the license-free cousin. Its default public channel is readable by every node on that preset. Private channels, and MeshCore, are actually encrypted. This app does not break those. It tunes 144.800 so you can see the bursts. The APRS line in the decoder report is a practice frame, not a station on the air.");
+                ui.small("Note: docs/MORSE_TEXT_AND_HANDHELDS.md.");
             }
             _ => {
                 ui.small("HackRF notes in the legacy repo are a buying guide only. This binary is RX-only by construction: no transmit command exists in the Command bus.");
@@ -2159,6 +2340,12 @@ fn waterfall_view(ui: &mut egui::Ui, rows: &VecDeque<Vec<f32>>) {
     );
     let painter = ui.painter_at(rect);
     painter.rect_filled(rect, 6.0, egui::Color32::BLACK);
+    painter.rect_stroke(
+        rect,
+        6.0,
+        egui::Stroke::new(1.0, egui::Color32::from_rgb(38, 70, 96)),
+        egui::StrokeKind::Inside,
+    );
     if rows.is_empty() {
         painter.text(
             rect.center(),

@@ -8,6 +8,7 @@
 
 pub mod bridge;
 pub mod creds;
+pub mod decode;
 pub mod error;
 pub mod import;
 pub mod llm;
@@ -123,6 +124,8 @@ pub enum Command {
     LlmModels {
         provider: Option<String>,
     },
+    /// Morse, RTTY, and APRS on practice tapes. Not a live copy of the air.
+    DecodeCopy,
 }
 
 fn ok(data: Value) -> Value {
@@ -159,10 +162,15 @@ pub async fn dispatch(cmd: Command) -> Value {
             Ok(v) => {
                 if let Ok(mut dev) = sdr::device() {
                     dev.center_freq_hz = v * 1e6;
+                    let path = if v < 24.0 {
+                        " RTL-SDR Blog v4 direct sampling. A plain R820T2 stick still starts at 24 MHz."
+                    } else {
+                        ""
+                    };
                     let info =
                         sdr::device_info_json(&dev, true, dev.mock == import::MockSetting::Enabled);
                     ok(
-                        json!({ "success": true, "message": format!("Frequency set to {v:.1} MHz"), "device": info }),
+                        json!({ "success": true, "message": format!("Frequency set to {v:.3} MHz.{path}"), "device": info }),
                     )
                 } else {
                     fail(DeviceError::Protocol(
@@ -192,8 +200,15 @@ pub async fn dispatch(cmd: Command) -> Value {
                 if let Ok(mut dev) = sdr::device() {
                     dev.center_freq_hz = freq_hz;
                 }
+                let front_end = if freq_hz >= 24_000_000.0 {
+                    "r820t2"
+                } else if freq_hz >= 500_000.0 {
+                    "rtl_blog_v4"
+                } else {
+                    "hf_receiver"
+                };
                 ok(
-                    json!({ "success": true, "preset": display, "frequency_mhz": freq_hz / 1e6, "note": note }),
+                    json!({ "success": true, "preset": display, "frequency_mhz": freq_hz / 1e6, "note": note, "front_end": front_end }),
                 )
             }
             Err(e) => fail(e),
@@ -402,6 +417,17 @@ pub async fn dispatch(cmd: Command) -> Value {
             Ok(models) => ok(json!({ "success": true, "models": models })),
             Err(e) => fail(e),
         },
+        Command::DecodeCopy => {
+            let (morse, rtty, aprs) = decode::copy_tapes();
+            ok(json!({
+                "success": true,
+                "live": false,
+                "reason": "Practice tapes inside the program. The stick's samples are not in the window, so nothing on the air was copied.",
+                "morse": morse,
+                "rtty": rtty,
+                "aprs": aprs,
+            }))
+        }
     }
 }
 
@@ -549,11 +575,28 @@ mod tests {
 
     #[tokio::test]
     async fn invalid_freq_is_typed_error() {
-        let value = dispatch(Command::DeviceSetFreq { mhz: 1.0 }).await;
+        let value = dispatch(Command::DeviceSetFreq { mhz: 0.1 }).await;
         assert_eq!(value.get("success").and_then(Value::as_bool), Some(false));
         assert_eq!(
             value.get("kind").and_then(Value::as_str),
             Some("invalid_input")
+        );
+    }
+
+    #[tokio::test]
+    async fn medium_wave_tunes_and_tapes_decode() {
+        let tuned = dispatch(Command::DeviceSetFreq { mhz: 0.909 }).await;
+        assert_eq!(tuned.get("success").and_then(Value::as_bool), Some(true));
+        let copied = dispatch(Command::DecodeCopy).await;
+        assert_eq!(copied.get("live").and_then(Value::as_bool), Some(false));
+        assert_eq!(
+            copied.get("morse").and_then(Value::as_str),
+            Some("CQ DE SDR")
+        );
+        assert_eq!(copied.get("rtty").and_then(Value::as_str), Some("SDR"));
+        assert_eq!(
+            copied.get("aprs").and_then(Value::as_str),
+            Some("SDR>APRS:>hi")
         );
     }
 

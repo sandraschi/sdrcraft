@@ -17,8 +17,9 @@ use serde_json::{json, Value};
 use std::collections::VecDeque;
 use std::time::Duration;
 
-/// Valid RTL-SDR range, verbatim from `handlers/state.py`.
-pub const MIN_FREQ_MHZ: f64 = 24.0;
+/// Lowest tune for an RTL-SDR Blog v4 (direct sampling / built-in HF).
+/// A plain R820T2 stick still starts at 24 MHz. Longwave is below this.
+pub const MIN_FREQ_MHZ: f64 = 0.5;
 pub const MAX_FREQ_MHZ: f64 = 1766.0;
 /// Legacy `scan_frequencies` step cap (`max_steps = 100`).
 pub const MAX_SCAN_STEPS: usize = 100;
@@ -95,9 +96,14 @@ impl Default for DeviceState {
 }
 
 pub fn validate_frequency_mhz(mhz: f64) -> Result<f64, DeviceError> {
-    if !mhz.is_finite() || mhz < MIN_FREQ_MHZ || mhz > MAX_FREQ_MHZ {
+    if !mhz.is_finite() || mhz > MAX_FREQ_MHZ {
         return Err(DeviceError::InvalidInput(format!(
             "Frequency must be between {MIN_FREQ_MHZ} MHz and {MAX_FREQ_MHZ} MHz"
+        )));
+    }
+    if mhz < MIN_FREQ_MHZ {
+        return Err(DeviceError::InvalidInput(format!(
+            "Frequency {mhz} MHz is below {MIN_FREQ_MHZ} MHz. An RTL-SDR Blog v4 hears from 0.5 MHz. A Ham It Up v1.3 or Nano hears from 100 kHz: tune the stick to 125 MHz plus the station (BBC 198 kHz is 125.198 MHz, AM). The Plus model starts at 300 Hz, same 125 MHz shift."
         )));
     }
     Ok(mhz)
@@ -614,7 +620,10 @@ mod tests {
     #[test]
     fn frequency_range_matches_rtlsdr() {
         assert!(validate_frequency_mhz(101.5).is_ok());
-        assert!(validate_frequency_mhz(23.9).is_err());
+        assert!(validate_frequency_mhz(0.5).is_ok());
+        assert!(validate_frequency_mhz(0.909).is_ok());
+        assert!(validate_frequency_mhz(23.9).is_ok());
+        assert!(validate_frequency_mhz(0.1).is_err());
         assert!(validate_frequency_mhz(1766.1).is_err());
         assert!(validate_frequency_mhz(f64::NAN).is_err());
     }
@@ -657,7 +666,7 @@ mod tests {
         assert!(scan_plan(88.0, 200.0, 1.0).is_err());
         assert!(scan_plan(100.0, 90.0, 1.0).is_err());
         assert!(scan_plan(88.0, 89.0, 0.0).is_err());
-        assert!(scan_plan(1.0, 2.0, 0.1).is_err());
+        assert!(scan_plan(0.1, 0.4, 0.1).is_err());
     }
 
     #[test]

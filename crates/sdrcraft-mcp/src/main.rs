@@ -83,6 +83,8 @@ enum Cmd {
         /// Topic, e.g. "BBC".
         topic: String,
     },
+    /// Copy Morse, RTTY, and APRS practice tapes (offline decoder check).
+    DecodeCopy,
 }
 
 #[derive(Debug, Subcommand)]
@@ -268,6 +270,7 @@ async fn main() {
         Cmd::Llm { op } => emit(llm_dispatch(op).await),
         Cmd::Assist { goal } => emit(assist_payload(&goal)),
         Cmd::Hint { topic } => emit(hint_payload(&topic)),
+        Cmd::DecodeCopy => emit(dispatch(Command::DecodeCopy).await),
     }
 }
 
@@ -465,7 +468,7 @@ fn tools_list() -> Value {
         tool("sdr.init_device", "Initialize device by index.", &[("index", "integer")], &[]),
         tool("sdr.device_status", "Current center freq, gain, mock setting. Legacy: sdr_device(operation=\"status\").", &[], &[]),
         tool("sdr.device_health", "RTL-SDR + GNU Radio sidecar reachability. Legacy: sdr_device(operation=\"health\").", &[], &[]),
-        tool("sdr.set_frequency", "Retune center frequency (24-1766 MHz).", &[("mhz", "number")], &["mhz"]),
+        tool("sdr.set_frequency", "Retune center frequency (0.5-1766 MHz). Under 24 MHz needs an RTL-SDR Blog v4. Longwave under 0.5 MHz is rejected.", &[("mhz", "number")], &["mhz"]),
         tool("sdr.set_gain", "Gain 'auto' or 0-49.6 dB.", &[("gain", "string")], &[]),
         tool("sdr.tune_preset", "Tune by callsign, name fragment, or LW preset key.", &[("name", "string")], &["name"]),
         tool("sdr.scan", "Sweep start-end MHz in step MHz (max 100 steps).", &[("start_mhz", "number"), ("end_mhz", "number"), ("step_mhz", "number")], &["start_mhz", "end_mhz"]),
@@ -501,6 +504,7 @@ fn tools_list() -> Value {
         tool("llm.models", "List models on the provider.", &[("provider", "string")], &[]),
         tool("sdr.agentic_assist", "Deterministic runbook for a goal (host sampling executes it). Legacy: sdr_agentic_assist.", &[("goal", "string")], &[]),
         tool("sdr.sampling_hint", "First-tool hint for a topic. Legacy: sdr_sampling_hint.", &[("topic", "string")], &[]),
+        tool("sdr.decode_copy", "Copy Morse, RTTY, and APRS practice tapes (live=false; not live air).", &[], &[]),
         // -- legacy portmanteau aliases (5) --
         tool("sdr_device", "LEGACY alias: device ops via operation=list|initialize|status|health|set_frequency|set_gain|tune_preset|scan|mock_mode.", &[("operation", "string")], &[]),
         tool("sdr_spectrum", "LEGACY alias: operation=spectrum|waterfall|start_websocket|stop_websocket|websocket_status|audio_status.", &[("operation", "string")], &[]),
@@ -760,6 +764,7 @@ async fn dispatch_named(name: &str, args: &Value) -> Value {
         "sdr.gnuradio_health" => Command::GnuradioHealth,
         "sdr.gnuradio_status" => Command::GnuradioStatus,
         "sdr.gnuradio_stop" => Command::GnuradioStop,
+        "sdr.decode_copy" => Command::DecodeCopy,
         "sdr.set_frequency" => match req_f64(args, "mhz", "set_frequency") {
             Ok(mhz) => Command::DeviceSetFreq { mhz },
             Err(message) => return err(message),
@@ -1003,10 +1008,10 @@ mod tests {
     use super::*;
 
     #[test]
-    fn catalog_lists_40_tools() {
+    fn catalog_lists_41_tools() {
         let tools = tools_list();
         let items = tools.as_array().cloned().unwrap_or_default();
-        assert_eq!(items.len(), 40);
+        assert_eq!(items.len(), 41);
         let names: Vec<String> = items
             .iter()
             .filter_map(|t| t.get("name").and_then(Value::as_str))
@@ -1028,6 +1033,7 @@ mod tests {
             "sdr.online_search",
             "sdr.gnuradio_start",
             "sdr.status",
+            "sdr.decode_copy",
             "bridge.event",
             "llm.chat",
         ] {
