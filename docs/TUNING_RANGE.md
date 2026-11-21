@@ -28,3 +28,16 @@ A plain R820T2 stick will accept a tune under 24 MHz in this window and then hea
 ## The whip is still the wrong antenna
 
 Opening the tune control does not make 1 MHz readable on the antenna that came in the box. Medium wave and shortwave want wire. See `docs/ANTENNAS.md`.
+
+## What is interesting under 24 MHz
+
+Below 24 MHz is where global propagation happens, especially after dusk:
+
+- **Time and frequency standards**: DCF77 (77.5 kHz, Mainflingen, Germany - needs an upconverter or RSP1B), RBU (66.66 kHz), WWV/WWVH (2.5, 5, 10, 15, 20 MHz), CHU Canada (3.330, 7.850, 14.670 MHz).
+- **Longwave & Medium wave broadcast**: European LW (153-279 kHz: France Inter 162, BBC/ORF 198, RTL 234) and MW (531-1602 kHz, strong at night across Europe).
+- **Shortwave broadcast bands**: 49m (5.9-6.2 MHz), 41m (7.2-7.45 MHz), 31m (9.4-9.9 MHz), 25m (11.6-12.1 MHz), 19m (15.1-15.8 MHz), 16m (17.48-17.9 MHz).
+- **Amateur radio HF bands (LSB below 10 MHz, USB at/above 10 MHz)**: 80m (3.5-3.8 MHz), 40m (7.0-7.2 MHz, CW/FT8 around 7.074 MHz), 30m (10.1-10.15 MHz, CW/digital), 20m (14.0-14.35 MHz, FT8 around 14.074 MHz, WSPR 14.0956 MHz), 15m (21.0-21.45 MHz).
+- **Utility, aviation & maritime**: Shanwick/Gander HF oceanic air traffic and VOLMET weather (e.g., 5.505, 8.957, 11.279, 13.264 MHz USB), coastal weatherfax (DDH47 Hamburg on 147.3 kHz, 3.855, 7.880, 13.8825 MHz), and 27 MHz CB (26.965-27.405 MHz).
+
+For serious HF/LW listening without an upconverter, a 14-bit native HF SDR like the **SDRplay RSP1B** (1 kHz-2 GHz, 10 MHz bandwidth, preselection filters) avoids the 8-bit dynamic-range overload that cheap sticks suffer near strong local FM/MW transmitters.
+
