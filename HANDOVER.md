@@ -1,12 +1,12 @@
-# HANDOVER -- `rust-sdr-mcp`
+# HANDOVER - `sdrcraft`
 
-**Last Updated:** 2026-10-18T20:10:04+02:00  
-**Current Phase:** Phase 4 COMPLETE (L3 59/59 green, oracle pixel-diff pending) -> Phase 5 release (6-gate + NSIS + GitHub v0.4.0)
+**Last Updated:** 2026-11-21
+**Current Phase:** Phase 3 (Hardware & Real-Time DSP: `realfft`, `rtl_tcp` IQ streaming, `cpal` audio, `tokio-tungstenite` WebSocket)
 
-## What Was Done
-- Stamped workspace via `mcp-central-docs/scripts/New-RustArtcraftRepo.ps1`.
-- Pre-populated `docs/CONVERSION_DOSSIER.md` and copied `bridge.rs`, `llm.rs` (`gemma4:12b`), `error.rs`, `creds.rs`, `vault.rs`, and `registry.rs` from `rust-devices-mcp`.
+## Context
+- `sdrcraft` replaces `rust-sdr-mcp` (vendored from `rust-sdr-mcp`, originally converted from Python `sdr-mcp`).
+- Receive-only desktop radio workstation (no `Tx` command by construction).
 
-## Next Concrete Action
-1. Review and finalize `docs/CONVERSION_DOSSIER.md`.
-2. Implement `crates/sdr-core/src/import.rs` and domain protocol module(s), then run `cargo test -p sdr-core`.
+## Recent Changes
+- Took over Cursor WIP (`decode.rs` practice tapes for Morse/RTTY/APRS, Blog v4 0.5 MHz floor, Listen page + Help tabs + 4 band/antenna docs).
+- Fixed CI gates: `ATTRIBUTION.md` for all PNGs, `WGPU_BACKEND=vulkan` for Windows `egui_kittest` snapshots, `installer/installer.nsi` renamed to `sdrcraft`, `README.md` feature matrix added.
