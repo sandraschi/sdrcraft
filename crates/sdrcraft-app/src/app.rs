@@ -1830,95 +1830,155 @@ impl SdrApp {
 
     fn page_tools(&mut self, ui: &mut egui::Ui) {
         ui.heading("Tools");
-        ui.small("One click per operation group. Full surface: 40 MCP tools (35 ArtCraft + 5 legacy aliases).");
-        ui.horizontal_wrapped(|ui| {
-            card_frame(ui, |ui| {
-                ui.strong("Device");
-                if ui.button("List devices").clicked() {
-                    self.spawn_devices();
-                }
-                if ui.button("Status").clicked() {
-                    self.spawn_status();
-                }
-                if ui.button("Health").clicked() {
-                    self.spawn_health();
-                }
-                if ui.button("Mock on").clicked() {
-                    self.spawn_mock(Some(true));
-                }
-                if ui.button("Mock off").clicked() {
-                    self.spawn_mock(Some(false));
-                }
-            });
-            card_frame(ui, |ui| {
-                ui.strong("Spectrum");
-                if ui.button("Get spectrum").clicked() {
-                    self.spawn_spectrum();
-                }
-                if ui.button("WS status").clicked() {
-                    self.spawn_status();
-                }
-            });
-            card_frame(ui, |ui| {
-                ui.strong("Stations");
-                if ui.button("Search BBC").clicked() {
-                    self.spawn_stations_search("BBC".to_string(), None);
-                }
-                if ui.button("LW band").clicked() {
-                    self.spawn_stations_search(String::new(), Some("LW".to_string()));
-                }
-                if ui.button("Database stats").clicked() {
-                    let tx = self.tx.clone();
-                    self.rt.spawn(async move {
-                        let _ = tx.send(Job::Stations(dispatch(Command::StationsStats).await));
+        ui.small("One click per operation group. Full surface: 43 MCP tools (38 ArtCraft + 5 legacy aliases).");
+        ui.add_space(6.0);
+        egui::Grid::new("tools_grid")
+            .num_columns(2)
+            .spacing([12.0, 12.0])
+            .show(ui, |ui| {
+                card_frame(ui, |ui| {
+                    ui.set_min_width(280.0);
+                    ui.strong("Device");
+                    ui.horizontal_wrapped(|ui| {
+                        if ui.button("List devices").clicked() {
+                            self.spawn_devices();
+                        }
+                        if ui.button("Status").clicked() {
+                            self.spawn_status();
+                        }
+                        if ui.button("Health").clicked() {
+                            self.spawn_health();
+                        }
+                        if ui.button("Mock on").clicked() {
+                            self.spawn_mock(Some(true));
+                        }
+                        if ui.button("Mock off").clicked() {
+                            self.spawn_mock(Some(false));
+                        }
                     });
-                    self.pending += 1;
-                }
-            });
-            card_frame(ui, |ui| {
-                ui.strong("GNU Radio");
-                if ui.button("Sidecar health").clicked() {
-                    self.spawn_gnuradio_health();
-                }
-                ui.horizontal(|ui| {
-                    ui.label("Mode");
-                    egui::ComboBox::from_id_salt("gnuradio_mode")
-                        .selected_text(&self.gnuradio_mode)
-                        .show_ui(ui, |ui| {
-                            for mode in ["fm", "am", "usb", "lsb"] {
-                                ui.selectable_value(
-                                    &mut self.gnuradio_mode,
-                                    mode.to_string(),
-                                    mode.to_uppercase(),
-                                );
-                            }
-                        });
-                    let demod_speed = if self.gnuradio_mhz < 30.0 { 0.001 } else { 0.5 };
-                    ui.add(
-                        egui::DragValue::new(&mut self.gnuradio_mhz)
-                            .speed(demod_speed)
-                            .range(0.5..=1766.0),
-                    );
-                    if ui.button("Start demod").clicked() {
-                        self.spawn_gnuradio_start(self.gnuradio_mhz, self.gnuradio_mode.clone());
-                    }
                 });
-                if ui.button("Demod status").clicked() {
-                    let tx = self.tx.clone();
-                    self.rt.spawn(async move {
-                        let _ = tx.send(Job::Gnuradio(dispatch(Command::GnuradioStatus).await));
+                card_frame(ui, |ui| {
+                    ui.set_min_width(280.0);
+                    ui.strong("Spectrum & Stream");
+                    ui.horizontal_wrapped(|ui| {
+                        if ui.button("Get spectrum").clicked() {
+                            self.spawn_spectrum();
+                        }
+                        if ui.button("WS start").clicked() {
+                            let tx = self.tx.clone();
+                            self.rt.spawn(async move {
+                                let _ = tx.send(Job::Status(
+                                    dispatch(Command::SpectrumWsStart {
+                                        host: "127.0.0.1".to_string(),
+                                        port: 8765,
+                                    })
+                                    .await,
+                                ));
+                            });
+                            self.pending += 1;
+                        }
+                        if ui.button("WS stop").clicked() {
+                            let tx = self.tx.clone();
+                            self.rt.spawn(async move {
+                                let _ =
+                                    tx.send(Job::Status(dispatch(Command::SpectrumWsStop).await));
+                            });
+                            self.pending += 1;
+                        }
+                        if ui.button("WS status").clicked() {
+                            let tx = self.tx.clone();
+                            self.rt.spawn(async move {
+                                let _ =
+                                    tx.send(Job::Status(dispatch(Command::SpectrumWsStatus).await));
+                            });
+                            self.pending += 1;
+                        }
+                        if ui.button("Audio status").clicked() {
+                            let tx = self.tx.clone();
+                            self.rt.spawn(async move {
+                                let _ = tx
+                                    .send(Job::Audio(dispatch(Command::SpectrumAudioStatus).await));
+                            });
+                            self.pending += 1;
+                        }
                     });
-                    self.pending += 1;
-                }
-                if ui.button("Stop demod").clicked() {
-                    self.spawn_gnuradio_stop();
-                }
+                });
+                ui.end_row();
+                card_frame(ui, |ui| {
+                    ui.set_min_width(280.0);
+                    ui.strong("Stations & Decoders");
+                    ui.horizontal_wrapped(|ui| {
+                        if ui.button("Search BBC").clicked() {
+                            self.spawn_stations_search("BBC".to_string(), None);
+                        }
+                        if ui.button("LW band").clicked() {
+                            self.spawn_stations_search(String::new(), Some("LW".to_string()));
+                        }
+                        if ui.button("Database stats").clicked() {
+                            let tx = self.tx.clone();
+                            self.rt.spawn(async move {
+                                let _ =
+                                    tx.send(Job::Stations(dispatch(Command::StationsStats).await));
+                            });
+                            self.pending += 1;
+                        }
+                        if ui.button("Copy practice tapes").clicked() {
+                            self.spawn_decode();
+                        }
+                    });
+                });
+                card_frame(ui, |ui| {
+                    ui.set_min_width(280.0);
+                    ui.strong("GNU Radio Sidecar");
+                    ui.horizontal_wrapped(|ui| {
+                        ui.label("Mode");
+                        egui::ComboBox::from_id_salt("gnuradio_mode")
+                            .selected_text(&self.gnuradio_mode)
+                            .show_ui(ui, |ui| {
+                                for mode in ["fm", "am", "usb", "lsb"] {
+                                    ui.selectable_value(
+                                        &mut self.gnuradio_mode,
+                                        mode.to_string(),
+                                        mode.to_uppercase(),
+                                    );
+                                }
+                            });
+                        let demod_speed = if self.gnuradio_mhz < 30.0 { 0.001 } else { 0.5 };
+                        ui.add(
+                            egui::DragValue::new(&mut self.gnuradio_mhz)
+                                .speed(demod_speed)
+                                .range(0.5..=1766.0),
+                        );
+                    });
+                    ui.horizontal_wrapped(|ui| {
+                        if ui.button("Sidecar health").clicked() {
+                            self.spawn_gnuradio_health();
+                        }
+                        if ui.button("Start demod").clicked() {
+                            self.spawn_gnuradio_start(
+                                self.gnuradio_mhz,
+                                self.gnuradio_mode.clone(),
+                            );
+                        }
+                        if ui.button("Demod status").clicked() {
+                            let tx = self.tx.clone();
+                            self.rt.spawn(async move {
+                                let _ =
+                                    tx.send(Job::Gnuradio(dispatch(Command::GnuradioStatus).await));
+                            });
+                            self.pending += 1;
+                        }
+                        if ui.button("Stop demod").clicked() {
+                            self.spawn_gnuradio_stop();
+                        }
+                    });
+                });
+                ui.end_row();
             });
-        });
         ui.separator();
         card_frame(ui, |ui| {
             ui.strong("Active Capabilities");
-            ui.small("40 MCP tools over stdio: sdr.* device/spectrum/stations/online/gnuradio, bridge.*, llm.*, plus legacy sdr_device/sdr_spectrum/sdr_stations/sdr_online/sdr_gnuradio aliases (zero-breakage cutover).");
+            ui.small("43 MCP tools over stdio: sdr.* device/spectrum/stations/online/gnuradio/decode, bridge.*, llm.*, plus legacy sdr_device/sdr_spectrum/sdr_stations/sdr_online/sdr_gnuradio aliases.");
             ui.small("RX-only binary: there is no transmit path by construction.");
         });
     }
