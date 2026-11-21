@@ -311,6 +311,7 @@ enum Job {
     ChatModels(Value),
     Bridge(Value),
     Scan(Value),
+    Audio(Value),
     VaultStatus { line: String, key_present: bool },
 }
 
@@ -389,6 +390,7 @@ pub struct SdrApp {
     lang_de: bool,
     overlay: Overlay,
     decode_report: String,
+    audio_running: bool,
 }
 
 impl SdrApp {
@@ -472,9 +474,13 @@ impl SdrApp {
             lang_de: false,
             overlay: Overlay::None,
             decode_report: String::new(),
+            audio_running: false,
         };
         app.push_log("boot: UI state loaded");
         app.spawn_vault_probe();
+        app.spawn_devices();
+        app.spawn_health();
+        app.spawn_spectrum();
         app
     }
 
@@ -576,6 +582,7 @@ impl SdrApp {
             lang_de: false,
             overlay: Overlay::None,
             decode_report: String::new(),
+            audio_running: false,
         }
     }
 
@@ -696,6 +703,18 @@ impl SdrApp {
                     self.show_raw(&value);
                     self.note("scan complete");
                 }
+                Job::Audio(value) => {
+                    self.audio_running = value
+                        .get("running")
+                        .and_then(Value::as_bool)
+                        .unwrap_or(false);
+                    self.show_raw(&value);
+                    self.note(if self.audio_running {
+                        "demo FM audio playing"
+                    } else {
+                        "audio stopped"
+                    });
+                }
                 Job::VaultStatus { line, key_present } => {
                     self.llm_status = line.clone();
                     self.llm_key_present = key_present;
@@ -783,6 +802,22 @@ impl SdrApp {
     fn spawn_mock(&mut self, enabled: Option<bool>) {
         self.spawn(move || async move {
             Job::Status(dispatch(Command::DeviceMockMode { enabled }).await)
+        });
+    }
+
+    fn spawn_audio_toggle(&mut self) {
+        let start = !self.audio_running;
+        self.spawn(move || async move {
+            if start {
+                Job::Audio(
+                    dispatch(Command::SpectrumAudioStart {
+                        mode: "fm".to_string(),
+                    })
+                    .await,
+                )
+            } else {
+                Job::Audio(dispatch(Command::SpectrumAudioStop).await)
+            }
         });
     }
 
@@ -1100,6 +1135,47 @@ impl eframe::App for SdrApp {
                     self.save_fields();
                 }
                 ui.separator();
+                let mock = self
+                    .devices_json
+                    .get("mock_mode")
+                    .and_then(Value::as_bool)
+                    .unwrap_or(true);
+                status_pill(
+                    ui,
+                    if mock {
+                        "Demo Mode (No Dongle)"
+                    } else {
+                        "Hardware (rtl_tcp)"
+                    },
+                    !mock,
+                    mock,
+                );
+                if ui
+                    .button(if mock {
+                        "Try Hardware"
+                    } else {
+                        "Use Demo Mode"
+                    })
+                    .on_hover_text("Switch between synthetic Demo IQ and live rtl_tcp hardware")
+                    .clicked()
+                {
+                    self.spawn_mock(Some(!mock));
+                    self.spawn_devices();
+                    self.spawn_spectrum();
+                }
+                let audio_label = if self.audio_running {
+                    "Stop Audio"
+                } else {
+                    "Play Demo FM"
+                };
+                if ui
+                    .button(audio_label)
+                    .on_hover_text("Play or stop demodulated FM audio via cpal")
+                    .clicked()
+                {
+                    self.spawn_audio_toggle();
+                }
+                ui.separator();
                 if self.pending > 0 {
                     ui.small(format!("{} jobs", self.pending));
                 } else {
@@ -1233,6 +1309,11 @@ impl SdrApp {
                 }
             });
             ui.menu_button("Help", |ui| {
+                if ui.button("SDR Primer / Help").clicked() {
+                    self.page = Page::Help;
+                    ui.close();
+                }
+                ui.separator();
                 if ui.button("Command Palette").clicked() {
                     self.overlay = Overlay::Palette;
                     ui.close();
@@ -1247,10 +1328,6 @@ impl SdrApp {
                 }
                 if ui.button("About").clicked() {
                     self.overlay = Overlay::About;
-                    ui.close();
-                }
-                if ui.button("Help").clicked() {
-                    self.page = Page::Help;
                     ui.close();
                 }
             });
@@ -2071,19 +2148,44 @@ impl SdrApp {
         ui.separator();
         match self.help_tab {
             0 => {
-                ui.small("Enter a frequency in MHz on the Spectrum page (0.5-1766) and press Tune. 0.5 to 24 MHz needs an RTL-SDR Blog v4. A plain R820T2 stick, including the Nooelec Nano 2 Plus, starts near 25 MHz. With a Ham It Up, add 125 MHz and use AM: BBC 198 kHz is 125.198. Named stations are on the Stations page.");
+                card_frame(ui, |ui| {
+                    ui.heading("Tuning and bands (0.5 to 1766 MHz)");
+                    ui.label("Enter a frequency in MHz on the Spectrum page (0.5-1766) and press Tune, or pick a band card on Listen.");
+                    ui.label("Under 24 MHz (HF / MW / LW): 0.5-24 MHz needs an RTL-SDR Blog v4 (direct sampling) or a native HF radio like the SDRplay RSP1B (1 kHz-2 GHz, 14-bit). A plain R820T2 stick (including Nooelec NESDR Nano 2 Plus) starts near 24-25 MHz.");
+                    ui.label("Interesting signals under 24 MHz: DCF77 (77.5 kHz) and WWV/CHU time stations, European LW/MW at night, shortwave broadcast bands (49m/41m/31m/25m/19m), 40m/20m amateur HF (7.074 / 14.074 MHz FT8, 14.0956 MHz WSPR), Shanwick/Gander HF aero & VOLMET, DDH47 weatherfax, and 27 MHz CB.");
+                    ui.label("With a Ham It Up upconverter, add 125 MHz and use AM: BBC 198 kHz is 125.198 MHz.");
+                    ui.small("Full details: docs/TUNING_RANGE.md");
+                });
             }
             1 => {
-                ui.small("Refresh spectrum draws the 2048-pt FFT in dB. The peak readout shows the strongest bin. Waterfall accumulates the last 60 rows, newest at the bottom.");
+                card_frame(ui, |ui| {
+                    ui.heading("Spectrum and Waterfall");
+                    ui.label("Refresh spectrum runs a 2048-pt Hamming-windowed rustfft FFT in dB. The peak readout shows the strongest frequency bin.");
+                    ui.label("Waterfall accumulates the last 60 rows (newest at the bottom). WebSocket streaming broadcasts live JSON frames on demand.");
+                });
             }
             2 => {
-                ui.small("11 seeded stations (LW/MW/SW/VHF) work offline with program schedules. Online search queries radio-browser.info (25k+ stations). Signal ID explains modes like FT8.");
+                card_frame(ui, |ui| {
+                    ui.heading("Stations and Online Search");
+                    ui.label("11 seeded stations across LW, MW, SW, VHF, and UHF work completely offline with program schedules.");
+                    ui.label("Online search queries radio-browser.info (25,000+ internet streams). Signal ID Wiki explains modes like FT8, RTTY, and APRS.");
+                });
             }
             3 => {
-                ui.small("Without a dongle the app runs on synthetic IQ: four demo tones plus drift. Spectrum, waterfall, scan and presets all work. Force it via device mock-mode.");
+                card_frame(ui, |ui| {
+                    ui.heading("Demo Mode (No Dongle Required)");
+                    ui.label("When no RTL-SDR stick or rtl_tcp server is connected, SDRCraft automatically runs in Demo Mode using deterministic synthetic IQ (four demo tones + drift).");
+                    ui.label("Spectrum, Waterfall, Scan, Presets, and Play Demo FM (cpal audio) all work out of the box without hardware. Use the top-bar Demo Mode / Try Hardware button to switch.");
+                });
             }
             4 => {
-                ui.small("A plain RTL2832U + R820T2 stick covers about 25 MHz to 1.7 GHz. The Nooelec NESDR Nano 2 Plus is that stick in a 24 x 21 x 8 mm shell, with a 0.5 ppm TCXO and an MCX antenna jack. An RTL-SDR Blog v4 adds about 0.5-24 MHz. A Ham It Up v1.3 or Nano, sold separately, hears 100 kHz to 65 MHz by shifting everything up 125 MHz. It needs its own USB power, and passthrough mode for FM and airband. Install WinUSB via Zadig, then serve the stick with rtl_tcp on port 1234.");
+                card_frame(ui, |ui| {
+                    ui.heading("Buying an SDR Dongle");
+                    ui.label("Plain RTL2832U + R820T2 (e.g. Nooelec NESDR Nano 2 Plus): ~25-1750 MHz, great for FM broadcast, airband, 2m/70cm, and 1090 MHz ADS-B.");
+                    ui.label("RTL-SDR Blog v4: 0.5-1766 MHz with built-in HF direct sampling and Bias-T.");
+                    ui.label("SDRplay RSP1B: 1 kHz-2 GHz continuous, 14-bit ADC, up to 10 MHz bandwidth, steel enclosure, preselection filters (uses SDRplay API / SoapySDRPlay3).");
+                    ui.label("On Windows for RTL-SDR, install WinUSB via Zadig and serve the stick with rtl_tcp on port 1234.");
+                });
             }
             5 => {
                 ui.label("The whip in the box hears a few strong local FM stations and sometimes nearby aircraft. It is a poor size for shortwave, it sits in the laptop's noise, and a vertical rod mismatches many horizontal FM broadcasts. Extend it, and move the stick to a window on a USB extension, before you decide the dongle is deaf.");
