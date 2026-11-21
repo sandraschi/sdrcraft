@@ -1,0 +1,16 @@
+[package]
+name = "sdrcraft-core"
+version = "0.1.0"
+edition = "2021"
+description = "L1 SDR domain drivers + Command::dispatch bus (Phase-1 scaffold; protocol lands in Phase 2)"
+license = "MIT"
+
+[dependencies]
+serde = { workspace = true }
+serde_json = { workspace = true }
+tokio = { workspace = true }
+reqwest = { workspace = true }
+chrono = { workspace = true }
+
+[lints]
+workspace = true

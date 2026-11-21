@@ -1,0 +1,30 @@
+[workspace]
+members = [
+    "crates/sdrcraft-core",
+    "crates/sdrcraft-mcp",
+    "crates/sdrcraft-app",
+    "xtask",
+]
+resolver = "2"
+
+[workspace.lints.clippy]
+unwrap_used = "deny"
+expect_used = "deny"
+panic = "deny"
+unimplemented = "deny"
+todo = "deny"
+
+# Blessed ArtCraft core stack (hardware/protocol crates land in Phase 2
+# with the domain modules: realfft/rustfft, tokio-tungstenite, cpal).
+[workspace.dependencies]
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+clap = { version = "4", features = ["derive"] }
+tokio = { version = "1", features = ["rt-multi-thread", "macros", "time", "net", "io-util"] }
+reqwest = { version = "0.12", features = ["json"] }
+chrono = "0.4"
+uuid = { version = "1", features = ["v5"] }
+rusqlite = { version = "0.40", features = ["bundled"] }
+keyring = "4"
+eframe = "0.37"
+image = "0.25"
