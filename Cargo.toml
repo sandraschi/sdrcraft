@@ -28,3 +28,7 @@ rusqlite = { version = "0.40", features = ["bundled"] }
 keyring = "4"
 eframe = "0.37"
 image = "0.25"
+rustfft = "6"
+tokio-tungstenite = "0.26"
+futures-util = "0.3"
+cpal = "0.15"

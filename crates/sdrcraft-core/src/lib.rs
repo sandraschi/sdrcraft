@@ -6,6 +6,7 @@
 //! WebSocket streaming and audio relay are typed `Unsupported` with the
 //! Phase-3 crate named (no silent stubs — the error says what and when).
 
+pub mod audio;
 pub mod bridge;
 pub mod creds;
 pub mod decode;
@@ -13,8 +14,10 @@ pub mod error;
 pub mod import;
 pub mod llm;
 pub mod online;
+pub mod rtl_tcp;
 pub mod sdr;
 pub mod stations;
+pub mod ws;
 
 use error::DeviceError;
 use serde_json::{json, Value};
@@ -57,6 +60,10 @@ pub enum Command {
     },
     SpectrumWsStop,
     SpectrumWsStatus,
+    SpectrumAudioStart {
+        mode: String,
+    },
+    SpectrumAudioStop,
     SpectrumAudioStatus,
     // -- stations (sdr_stations) --
     StationsSearch {
@@ -226,14 +233,24 @@ pub async fn dispatch(cmd: Command) -> Value {
             }
             Err(e) => fail(e),
         },
-        Command::SpectrumWsStart { .. } | Command::SpectrumWsStop | Command::SpectrumWsStatus => {
-            fail(DeviceError::Unsupported(
-                "websocket streaming moves to tokio-tungstenite in Phase 3".to_string(),
-            ))
-        }
-        Command::SpectrumAudioStatus => fail(DeviceError::Unsupported(
-            "audio relay status moves to the cpal relay in Phase 3".to_string(),
-        )),
+        Command::SpectrumWsStart { host, port } => match ws::start(host, port).await {
+            Ok(v) => ok(v),
+            Err(e) => fail(e),
+        },
+        Command::SpectrumWsStop => match ws::stop() {
+            Ok(v) => ok(v),
+            Err(e) => fail(e),
+        },
+        Command::SpectrumWsStatus => ok(ws::status()),
+        Command::SpectrumAudioStart { mode } => match audio::start(&mode) {
+            Ok(v) => ok(v),
+            Err(e) => fail(e),
+        },
+        Command::SpectrumAudioStop => match audio::stop() {
+            Ok(v) => ok(v),
+            Err(e) => fail(e),
+        },
+        Command::SpectrumAudioStatus => ok(audio::status()),
         Command::StationsSearch {
             query,
             band,
@@ -514,38 +531,112 @@ async fn device_scan(start_mhz: f64, end_mhz: f64, step_mhz: f64) -> Value {
         Err(e) => return fail(e),
     };
     let cfg = import::LegacyConfig::resolve();
-    let setting = sdr::device().map(|d| d.mock).unwrap_or(cfg.mock);
-    if !sdr::effective_mock(setting, &cfg).await {
-        return fail(DeviceError::Offline(
-            "scan needs hardware: no rtl_tcp stream reachable and direct USB lands in Phase 3"
-                .to_string(),
-        ));
-    }
+    let dev_snapshot = sdr::device().ok().map(|d| d.clone());
+    let setting = dev_snapshot.as_ref().map(|d| d.mock).unwrap_or(cfg.mock);
+    let use_mock = sdr::effective_mock(setting, &cfg).await;
+    let sample_rate = dev_snapshot
+        .as_ref()
+        .map(|d| d.sample_rate)
+        .unwrap_or(sdr::DEFAULT_SAMPLE_RATE);
+    let gain = dev_snapshot
+        .as_ref()
+        .map(|d| d.gain.clone())
+        .unwrap_or(sdr::Gain::Auto);
+    let ppm = dev_snapshot
+        .as_ref()
+        .map(|d| d.freq_correction_ppm)
+        .unwrap_or(sdr::DEFAULT_FREQ_CORRECTION_PPM);
+
     let mut results = Vec::with_capacity(freqs.len());
     for freq in &freqs {
-        if let Ok(mut gen) = sdr::mock_iq() {
-            let samples = gen.generate(sdr::FFT_SIZE * 2);
-            let (_, power) = sdr::compute_spectrum(&samples, sdr::DEFAULT_SAMPLE_RATE);
-            let peak = power.iter().fold(f64::NEG_INFINITY, |a, b| a.max(*b));
-            results.push(json!({ "frequency_mhz": freq, "peak_db": (peak * 10.0).round() / 10.0 }));
+        if use_mock {
+            if let Ok(mut gen) = sdr::mock_iq() {
+                let samples = gen.generate(sdr::FFT_SIZE * 2);
+                let (_, power) = sdr::compute_spectrum(&samples, sample_rate);
+                let peak = power.iter().fold(f64::NEG_INFINITY, |a, b| a.max(*b));
+                results.push(
+                    json!({ "frequency_mhz": freq, "peak_db": (peak * 10.0).round() / 10.0 }),
+                );
+            }
+            tokio::time::sleep(sdr::SCAN_DWELL).await;
+        } else {
+            match rtl_tcp::capture_iq(
+                &cfg.rtl_host,
+                cfg.rtl_port,
+                freq * 1e6,
+                sample_rate,
+                &gain,
+                ppm,
+                sdr::FFT_SIZE * 2,
+            )
+            .await
+            {
+                Ok((_, samples)) => {
+                    let (_, power) = sdr::compute_spectrum(&samples, sample_rate);
+                    let peak = power.iter().fold(f64::NEG_INFINITY, |a, b| a.max(*b));
+                    results.push(
+                        json!({ "frequency_mhz": freq, "peak_db": (peak * 10.0).round() / 10.0 }),
+                    );
+                }
+                Err(e) => return fail(e),
+            }
         }
-        tokio::time::sleep(sdr::SCAN_DWELL).await;
     }
     json!({
         "success": true,
         "status": "scan_complete",
         "scan_parameters": { "start_mhz": start_mhz, "end_mhz": end_mhz, "step_mhz": step_mhz, "steps": freqs.len() },
         "scan_results": results,
-        "source": "synthetic_iq",
+        "source": if use_mock { "synthetic_iq" } else { "rtl_tcp" },
     })
 }
 
 async fn spectrum_get() -> Value {
-    let samples = match sdr::mock_iq() {
-        Ok(mut gen) => gen.generate(sdr::FFT_SIZE * 2),
-        Err(e) => return fail(e),
+    let cfg = import::LegacyConfig::resolve();
+    let dev_snapshot = sdr::device().ok().map(|d| d.clone());
+    let setting = dev_snapshot.as_ref().map(|d| d.mock).unwrap_or(cfg.mock);
+    let use_mock = sdr::effective_mock(setting, &cfg).await;
+    let sample_rate = dev_snapshot
+        .as_ref()
+        .map(|d| d.sample_rate)
+        .unwrap_or(sdr::DEFAULT_SAMPLE_RATE);
+
+    let (samples, source, tuner) = if use_mock {
+        let samples = match sdr::mock_iq() {
+            Ok(mut gen) => gen.generate(sdr::FFT_SIZE * 2),
+            Err(e) => return fail(e),
+        };
+        (samples, "synthetic_iq", None)
+    } else {
+        let center_hz = dev_snapshot
+            .as_ref()
+            .map(|d| d.center_freq_hz)
+            .unwrap_or(sdr::DEFAULT_CENTER_FREQ_HZ);
+        let gain = dev_snapshot
+            .as_ref()
+            .map(|d| d.gain.clone())
+            .unwrap_or(sdr::Gain::Auto);
+        let ppm = dev_snapshot
+            .as_ref()
+            .map(|d| d.freq_correction_ppm)
+            .unwrap_or(sdr::DEFAULT_FREQ_CORRECTION_PPM);
+        match rtl_tcp::capture_iq(
+            &cfg.rtl_host,
+            cfg.rtl_port,
+            center_hz,
+            sample_rate,
+            &gain,
+            ppm,
+            sdr::FFT_SIZE * 2,
+        )
+        .await
+        {
+            Ok((hdr, samples)) => (samples, "rtl_tcp", Some(hdr.tuner_name())),
+            Err(e) => return fail(e),
+        }
     };
-    let (freqs, power) = sdr::compute_spectrum(&samples, sdr::DEFAULT_SAMPLE_RATE);
+
+    let (freqs, power) = sdr::compute_spectrum(&samples, sample_rate);
     if let Ok(mut wf) = sdr::waterfall() {
         wf.push(power.clone());
     }
@@ -553,7 +644,8 @@ async fn spectrum_get() -> Value {
         "success": true,
         "frequencies": freqs,
         "spectrum": power,
-        "source": "synthetic_iq",
+        "source": source,
+        "tuner": tuner,
     })
 }
 
@@ -620,11 +712,13 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn ws_ops_name_phase3() {
-        let value = dispatch(Command::SpectrumWsStatus).await;
+    async fn ws_and_audio_status_work() {
+        let ws_val = dispatch(Command::SpectrumWsStatus).await;
+        assert_eq!(ws_val.get("success").and_then(Value::as_bool), Some(true));
+        let audio_val = dispatch(Command::SpectrumAudioStatus).await;
         assert_eq!(
-            value.get("kind").and_then(Value::as_str),
-            Some("unsupported")
+            audio_val.get("success").and_then(Value::as_bool),
+            Some(true)
         );
     }
 }

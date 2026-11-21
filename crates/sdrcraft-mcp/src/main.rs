@@ -135,6 +135,11 @@ enum SpectrumCmd {
     },
     WsStop,
     WsStatus,
+    AudioStart {
+        #[arg(long, default_value = "fm")]
+        mode: String,
+    },
+    AudioStop,
     AudioStatus,
 }
 
@@ -304,6 +309,8 @@ async fn spectrum_dispatch(op: SpectrumCmd) -> Value {
         SpectrumCmd::WsStart { host, port } => Command::SpectrumWsStart { host, port },
         SpectrumCmd::WsStop => Command::SpectrumWsStop,
         SpectrumCmd::WsStatus => Command::SpectrumWsStatus,
+        SpectrumCmd::AudioStart { mode } => Command::SpectrumAudioStart { mode },
+        SpectrumCmd::AudioStop => Command::SpectrumAudioStop,
         SpectrumCmd::AudioStatus => Command::SpectrumAudioStatus,
     })
     .await
@@ -476,10 +483,12 @@ fn tools_list() -> Value {
         // -- spectrum (6) --
         tool("sdr.spectrum", "2048-pt power spectrum in dB (Demo synthetic IQ). Legacy: sdr_spectrum(operation=\"spectrum\").", &[], &[]),
         tool("sdr.waterfall", "100-line waterfall history.", &[], &[]),
-        tool("sdr.ws_start", "Start the spectrum WebSocket (Phase 3 streams; state tracked now).", &[("host", "string"), ("port", "integer")], &[]),
-        tool("sdr.ws_stop", "Stop the spectrum WebSocket.", &[], &[]),
+        tool("sdr.ws_start", "Start the spectrum WebSocket server.", &[("host", "string"), ("port", "integer")], &[]),
+        tool("sdr.ws_stop", "Stop the spectrum WebSocket server.", &[], &[]),
         tool("sdr.ws_status", "WebSocket server state.", &[], &[]),
-        tool("sdr.audio_status", "FM audio relay state.", &[], &[]),
+        tool("sdr.audio_start", "Start cpal audio relay (mode=fm|am).", &[("mode", "string")], &[]),
+        tool("sdr.audio_stop", "Stop cpal audio relay.", &[], &[]),
+        tool("sdr.audio_status", "FM/AM audio relay state.", &[], &[]),
         // -- stations (5, offline) --
         tool("sdr.stations_search", "Seeded DB search by name/callsign/description/country.", &[("query", "string"), ("band", "string"), ("country", "string")], &[]),
         tool("sdr.stations_by_band", "All seeded stations on LW|MW|SW|VHF|UHF.", &[("band", "string")], &["band"]),
@@ -759,6 +768,10 @@ async fn dispatch_named(name: &str, args: &Value) -> Value {
         "sdr.waterfall" => Command::SpectrumWaterfall,
         "sdr.ws_stop" => Command::SpectrumWsStop,
         "sdr.ws_status" => Command::SpectrumWsStatus,
+        "sdr.audio_start" => Command::SpectrumAudioStart {
+            mode: opt_string(args, "mode").unwrap_or_else(|| "fm".to_string()),
+        },
+        "sdr.audio_stop" => Command::SpectrumAudioStop,
         "sdr.audio_status" => Command::SpectrumAudioStatus,
         "sdr.stations_stats" => Command::StationsStats,
         "sdr.gnuradio_health" => Command::GnuradioHealth,
@@ -1008,10 +1021,10 @@ mod tests {
     use super::*;
 
     #[test]
-    fn catalog_lists_41_tools() {
+    fn catalog_lists_43_tools() {
         let tools = tools_list();
         let items = tools.as_array().cloned().unwrap_or_default();
-        assert_eq!(items.len(), 41);
+        assert_eq!(items.len(), 43);
         let names: Vec<String> = items
             .iter()
             .filter_map(|t| t.get("name").and_then(Value::as_str))

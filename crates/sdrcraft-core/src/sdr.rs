@@ -319,42 +319,32 @@ impl MockIq {
     }
 }
 
-/// 2048-pt Hamming-windowed power spectrum, verbatim (`processor.py`):
+/// 2048-pt Hamming-windowed power spectrum using `rustfft`, matching `processor.py`:
 /// most-recent window, FFT, `fftshift`, `20*log10(|x|+1e-12)`, centered
-/// frequency axis. Naive DFT (Phase 3 upgrades to `realfft`); short input
-/// yields empty vectors exactly like the legacy guard.
+/// frequency axis. Short input yields empty vectors like the legacy guard.
 pub fn compute_spectrum(samples: &[(f64, f64)], sample_rate: f64) -> (Vec<f64>, Vec<f64>) {
     if samples.len() < FFT_SIZE || !sample_rate.is_finite() || sample_rate <= 0.0 {
         return (Vec::new(), Vec::new());
     }
-    let window: Vec<(f64, f64)> = samples[samples.len() - FFT_SIZE..].to_vec();
-    // Hamming window + DFT via twiddle recurrence (no trig in the inner loop).
-    // Phase 3 upgrades this O(n^2) pass to `realfft`; the window, shift and
-    // dB scaling already match `processor.py` exactly.
-    let mut mags = vec![0.0f64; FFT_SIZE];
-    for (k, mag) in mags.iter_mut().enumerate() {
-        let angle = -2.0 * std::f64::consts::PI * k as f64 / FFT_SIZE as f64;
-        let (sin_a, cos_a) = angle.sin_cos();
-        let mut cur_re = 1.0;
-        let mut cur_im = 0.0;
-        let mut acc_re = 0.0;
-        let mut acc_im = 0.0;
-        for (j, (re, im)) in window.iter().enumerate() {
+    let window = &samples[samples.len() - FFT_SIZE..];
+    let mut buffer: Vec<rustfft::num_complex::Complex<f64>> = window
+        .iter()
+        .enumerate()
+        .map(|(j, (re, im))| {
             let w = 0.54 - 0.46 * (2.0 * std::f64::consts::PI * j as f64 / FFT_SIZE as f64).cos();
-            let (x_re, x_im) = (re * w, im * w);
-            acc_re += x_re * cur_re - x_im * cur_im;
-            acc_im += x_re * cur_im + x_im * cur_re;
-            let next_re = cur_re * cos_a - cur_im * sin_a;
-            cur_im = cur_re * sin_a + cur_im * cos_a;
-            cur_re = next_re;
-        }
-        *mag = acc_re.hypot(acc_im);
-    }
+            rustfft::num_complex::Complex::new(re * w, im * w)
+        })
+        .collect();
+
+    let mut planner = rustfft::FftPlanner::<f64>::new();
+    let fft = planner.plan_fft_forward(FFT_SIZE);
+    fft.process(&mut buffer);
+
     // fftshift + dB.
     let mut power = vec![0.0f64; FFT_SIZE];
-    for (i, mag) in mags.iter().enumerate() {
+    for (i, c) in buffer.iter().enumerate() {
         let shifted = (i + FFT_SIZE / 2) % FFT_SIZE;
-        power[shifted] = 20.0 * (mag + 1e-12).log10();
+        power[shifted] = 20.0 * (c.norm() + 1e-12).log10();
     }
     let step = sample_rate / FFT_SIZE as f64;
     let freqs: Vec<f64> = (0..FFT_SIZE)
