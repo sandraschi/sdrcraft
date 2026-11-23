@@ -1,6 +1,6 @@
 #![forbid(unsafe_code)]
 //! L2 `sdrcraft-mcp`: `clap` CLI (JSON on every command) + dual-aliased
-//! MCP `2024-11-05` stdio server over [`sdrcraft_core::dispatch`].
+//! MCP `2026-07-28` stdio server over [`sdrcraft_core::dispatch`].
 //!
 //! Tool naming (contract §8 + `docs/CONVERSION_DOSSIER.md` §3): every
 //! operation is reachable three ways — dotted ArtCraft (`sdr.list_devices`),
@@ -989,7 +989,7 @@ async fn run_mcp_stdio() -> Result<(), String> {
             "initialize" => respond(
                 &id,
                 json!({
-                    "protocolVersion": "2024-11-05",
+                    "protocolVersion": "2026-07-28",
                     "capabilities": { "tools": {} },
                     "serverInfo": { "name": "sdrcraft-mcp", "version": "0.1.0" },
                 }),

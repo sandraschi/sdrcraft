@@ -35,7 +35,7 @@ sdrcraft/
 ├── installer/installer.nsi              # current-user NSIS installer
 └── crates/
     ├── sdrcraft-core/  # L1: bridge, llm (gemma4:12b), error, creds, import, decode, sdr, stations, online
-    ├── sdrcraft-mcp/   # L2: clap CLI + MCP 2024-11-05 stdio loop
+    ├── sdrcraft-mcp/   # L2: clap CLI + MCP 2026-07-28 stdio loop
     └── sdrcraft-app/   # L3: eframe 0.37 window + --smoke + vault/registry
 ```
 
