@@ -16,6 +16,16 @@ CLI: `sdrcraft-mcp status` prints JSON. MCP: `sdrcraft-mcp mcp-stdio`. The windo
 
 A plain RTL-SDR stick stops near 25 MHz because its R820T2 tuner was built for television. The Nooelec NESDR Nano 2 Plus is that kind of stick: about 24 x 21 x 8 mm, 0.5 ppm TCXO, MCX jack, roughly 25-1750 MHz. Medium wave and shortwave on the stick itself need an RTL-SDR Blog v4, from about 0.5 MHz. Longwave (BBC and ORF on 198 kHz) is still below that. A Ham It Up v1.3 or Nano hears from 100 kHz to 65 MHz. The Plus hears from 300 Hz. All three shift by 125 MHz, so this window tunes BBC 198 kHz as 125.198 MHz, AM. The upconverter needs its own USB socket, and passthrough mode when you go back to FM. Detail is in `docs/TUNING_RANGE.md`.
 
+## Hardware & Buying Guide
+
+Cheap mini sticks use an 8-bit RTL2832U + R820T2 TV tuner chip: fine for casual FM, airband, or 1090 MHz ADS-B, but they overload near strong local transmitters and lack sensitivity on HF.
+
+- **SDRplay RSP1B (Recommended)**: 1 kHz to 2 GHz continuous, 14-bit ADC, up to 10 MHz bandwidth, steel shielded case, hardware preselection and AM/FM/DAB notch filters, and software-selectable 4.7V Bias-T. Uses proprietary SDRplay API v3 (works with SDRconnect/SDRuno natively, and via `SoapySDRPlay3` / GNU Radio sidecar for SDRCraft).
+- **Airspy HF+ Discovery**: Benchmark HF (< 31 MHz) sensitivity with open drivers, covering 9 kHz-31 MHz and 60-260 MHz. No UHF (no 70cm, PMR446, or 1090 MHz ADS-B).
+- **RTL-SDR Blog v4**: Best budget stick (0.5-1766 MHz with built-in HF direct sampling and Bias-T), still 8-bit dynamic range.
+- **Plain R820T2 stick** (e.g. Nooelec NESDR Nano 2 Plus): ~25-1750 MHz only; needs a Ham It Up upconverter (+125 MHz) for HF/MW/LW.
+- **HackRF One**: 1 MHz-6 GHz 8-bit transceiver. High noise floor / weak RX sensitivity compared to RSP1B or Airspy; skip for RX-only listening.
+
 ## Morse, text, and handhelds
 
 The Listen page copies a Morse tape, a RTTY tape, and an APRS practice frame. The report says the copy is not live: the stick's audio is not in the window yet. PSK31, FT8, and JS8 stay with fldigi and WSJT-X. APRS at 144.800 MHz is the text net you can already tune. You see bursts. The printed APRS line is the practice frame.

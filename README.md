@@ -48,3 +48,20 @@ cargo run -p sdrcraft-app -- --smoke         # headless state boot, exit 0
 cargo run -p xtask -- ci                     # fmt, clippy, test, assets, layers, wasm, deny
 just check; just test; just fmt-check        # dev gates
 ```
+
+## Hardware & Buying Guide
+
+Cheap USB sticks built on the **RTL2832U + R820T2** TV-tuner chip (8-bit ADC, ~2.4 MHz bandwidth) work for casual VHF/UHF (broadcast FM, airband, 1090 MHz ADS-B) but overload easily near strong local transmitters and stop at ~24 MHz. For wide coverage and real sensitivity:
+
+| Receiver | Coverage | ADC / Bandwidth | Notes |
+|---|---|---|---|
+| **SDRplay RSP1B** *(Recommended)* | **1 kHz - 2 GHz** | **14-bit**, up to 10 MHz | Steel shielded case, hardware preselection + AM/FM/DAB notch filters, 4.7V Bias-T. Uses proprietary SDRplay API v3 (`SoapySDRPlay3` / GNU Radio sidecar for `sdrcraft`). |
+| **Airspy HF+ Discovery** | 9 kHz - 31 MHz & 60 - 260 MHz | High-DR HF + VHF | Benchmark HF (< 31 MHz) sensitivity and blocking resistance, open drivers. **No UHF** (no 70cm/446 MHz/1090 MHz ADS-B). |
+| **RTL-SDR Blog v4** | 0.5 - 1766 MHz | 8-bit, ~2.4 MHz | Best budget stick: built-in HF direct sampling and Bias-T, still 8-bit dynamic range. |
+| **Plain R820T2 stick** (e.g. Nooelec NESDR Nano 2 Plus) | ~25 - 1750 MHz | 8-bit, ~2.4 MHz | TV-tuner heritage: deaf below ~24 MHz without a 125 MHz upconverter (Ham It Up). |
+| **HackRF One** | 1 MHz - 6 GHz | 8-bit, 20 MHz | Transceiver (TX-capable). High noise floor / poor weak-signal RX compared to RSP1B or Airspy; skip for RX-only listening. |
+
+**Antennas & Setup**:
+- **Windows RTL-SDR**: Install the WinUSB driver via Zadig and serve the stick with `rtl_tcp` on port `1234` (or use Demo Mode with no hardware connected).
+- **Antennas**: Move any whip off the laptop onto a USB extension at a window. For VHF/UHF use a telescopic dipole or discone; for HF (< 24 MHz) use an outdoor/window long wire or a small indoor magnetic loop. See [docs/TUNING_RANGE.md](docs/TUNING_RANGE.md) and [docs/ANTENNAS.md](docs/ANTENNAS.md).
+
