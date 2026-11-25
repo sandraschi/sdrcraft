@@ -390,7 +390,11 @@ pub struct SdrApp {
     lang_de: bool,
     overlay: Overlay,
     decode_report: String,
+    decode_mode: String,
+    decode_input: String,
     audio_running: bool,
+    live_sweep: bool,
+    last_sweep: std::time::Instant,
 }
 
 impl SdrApp {
@@ -474,7 +478,11 @@ impl SdrApp {
             lang_de: false,
             overlay: Overlay::None,
             decode_report: String::new(),
+            decode_mode: "morse".to_string(),
+            decode_input: "CQ DE SDR".to_string(),
             audio_running: false,
+            live_sweep: false,
+            last_sweep: std::time::Instant::now(),
         };
         app.push_log("boot: UI state loaded");
         app.spawn_vault_probe();
@@ -582,7 +590,11 @@ impl SdrApp {
             lang_de: false,
             overlay: Overlay::None,
             decode_report: String::new(),
+            decode_mode: "morse".to_string(),
+            decode_input: "CQ DE SDR".to_string(),
             audio_running: false,
+            live_sweep: false,
+            last_sweep: std::time::Instant::now(),
         }
     }
 
@@ -622,12 +634,20 @@ impl SdrApp {
             self.pending = self.pending.saturating_sub(1);
             match job {
                 Job::Decode(value) => {
-                    let morse = value.get("morse").and_then(Value::as_str).unwrap_or("");
-                    let rtty = value.get("rtty").and_then(Value::as_str).unwrap_or("");
-                    let aprs = value.get("aprs").and_then(Value::as_str).unwrap_or("");
-                    let reason = value.get("reason").and_then(Value::as_str).unwrap_or("");
-                    self.decode_report =
-                        format!("Morse: {morse}\nRTTY: {rtty}\nAPRS: {aprs}\n{reason}");
+                    if let Some(decoded) = value.get("decoded").and_then(Value::as_str) {
+                        let mode = value.get("mode").and_then(Value::as_str).unwrap_or("");
+                        self.decode_report = format!(
+                            "{} decoded: {decoded} (practice modem, live=false)",
+                            mode.to_uppercase()
+                        );
+                    } else {
+                        let morse = value.get("morse").and_then(Value::as_str).unwrap_or("");
+                        let rtty = value.get("rtty").and_then(Value::as_str).unwrap_or("");
+                        let aprs = value.get("aprs").and_then(Value::as_str).unwrap_or("");
+                        let reason = value.get("reason").and_then(Value::as_str).unwrap_or("");
+                        self.decode_report =
+                            format!("Morse: {morse}\nRTTY: {rtty}\nAPRS: {aprs}\n{reason}");
+                    }
                     self.show_raw(&value);
                     self.note("decoder tapes copied");
                 }
@@ -735,6 +755,12 @@ impl SdrApp {
 
     fn spawn_decode(&mut self) {
         self.spawn(|| async { Job::Decode(dispatch(Command::DecodeCopy).await) });
+    }
+
+    fn spawn_decode_text(&mut self, mode: String, text: String) {
+        self.spawn(move || async move {
+            Job::Decode(dispatch(Command::DecodeText { mode, text }).await)
+        });
     }
 
     fn spawn_devices(&mut self) {
@@ -1215,6 +1241,17 @@ impl eframe::App for SdrApp {
                 });
         });
 
+        if self.live_sweep
+            && self.pending == 0
+            && self.last_sweep.elapsed() >= std::time::Duration::from_millis(250)
+        {
+            self.last_sweep = std::time::Instant::now();
+            self.spawn_spectrum();
+        }
+        if self.live_sweep {
+            ui.ctx()
+                .request_repaint_after(std::time::Duration::from_millis(250));
+        }
         if self.pending > 0 {
             ui.ctx().request_repaint();
         }
@@ -1513,11 +1550,34 @@ impl SdrApp {
             }
         });
         ui.separator();
-        ui.strong("Decoders");
-        ui.small("Practice tapes only. Nothing on the air is copied until the stick's samples are in the window.");
-        if ui.button("Copy Morse, RTTY, and APRS").clicked() {
-            self.spawn_decode();
-        }
+        ui.strong("Decoders (Practice Modem)");
+        ui.small("Practice tapes and custom text round-trip. Nothing on the air is copied until live stick audio is wired.");
+        ui.horizontal_wrapped(|ui| {
+            if ui.button("Copy Morse, RTTY, and APRS").clicked() {
+                self.spawn_decode();
+            }
+            egui::ComboBox::from_id_salt("decode_mode")
+                .selected_text(self.decode_mode.to_uppercase())
+                .show_ui(ui, |ui| {
+                    for mode in ["morse", "rtty", "aprs"] {
+                        ui.selectable_value(
+                            &mut self.decode_mode,
+                            mode.to_string(),
+                            mode.to_uppercase(),
+                        );
+                    }
+                });
+            ui.add(
+                egui::TextEdit::singleline(&mut self.decode_input)
+                    .desired_width(180.0)
+                    .hint_text("e.g. CQ DE OE1ABC"),
+            );
+            if ui.button("Encode & Decode").clicked() {
+                let mode = self.decode_mode.clone();
+                let text = self.decode_input.clone();
+                self.spawn_decode_text(mode, text);
+            }
+        });
         if !self.decode_report.is_empty() {
             ui.label(&self.decode_report);
         }
@@ -1586,7 +1646,7 @@ impl SdrApp {
             });
             card_frame(ui, |ui| {
                 hero_kpi(ui, "MCP Bridge", "Online", ACCENT);
-                ui.small("40 tools, in-process");
+                ui.small("44 tools, in-process");
             });
         });
     }
@@ -1594,15 +1654,46 @@ impl SdrApp {
     fn page_spectrum(&mut self, ui: &mut egui::Ui) {
         ui.heading("Spectrum");
         ui.small("2048-pt power spectrum in dB, centered on the tuned frequency.");
-        ui.horizontal(|ui| {
+        ui.horizontal_wrapped(|ui| {
             if ui.button("Refresh spectrum").clicked() {
                 self.spawn_spectrum();
+            }
+            let sweep_label = if self.live_sweep {
+                "Stop Live Sweep"
+            } else {
+                "Start Live Sweep"
+            };
+            if ui.button(sweep_label).clicked() {
+                self.live_sweep = !self.live_sweep;
+                if self.live_sweep {
+                    self.last_sweep = std::time::Instant::now();
+                    self.spawn_spectrum();
+                }
             }
             ui.small(format!("{} bins", self.spectrum_power.len()));
             if let Some((peak_db, peak_hz)) =
                 spectrum_peak(&self.spectrum_freqs, &self.spectrum_power)
             {
                 ui.small(format!("peak {peak_db:.1} dB @ {peak_hz:.0} Hz offset"));
+            }
+        });
+        ui.horizontal_wrapped(|ui| {
+            ui.small("Quick tune:");
+            for (label, mhz) in [
+                ("98.0 FM", 98.0),
+                ("125.0 Air", 125.0),
+                ("144.8 APRS", 144.8),
+                ("145.5 2m", 145.5),
+                ("1090 ADS-B", 1090.0),
+                ("7.074 FT8", 7.074),
+                ("14.074 FT8", 14.074),
+                ("5.975 SW", 5.975),
+            ] {
+                if ui.small_button(label).clicked() {
+                    self.tune_mhz = mhz;
+                    self.spawn_tune(mhz);
+                    self.spawn_spectrum();
+                }
             }
         });
         spectrum_canvas(ui, &self.spectrum_freqs, &self.spectrum_power);
@@ -1676,6 +1767,18 @@ impl SdrApp {
         ui.horizontal(|ui| {
             if ui.button("Refresh (adds a row)").clicked() {
                 self.spawn_spectrum();
+            }
+            let sweep_label = if self.live_sweep {
+                "Stop Live Sweep"
+            } else {
+                "Start Live Sweep"
+            };
+            if ui.button(sweep_label).clicked() {
+                self.live_sweep = !self.live_sweep;
+                if self.live_sweep {
+                    self.last_sweep = std::time::Instant::now();
+                    self.spawn_spectrum();
+                }
             }
             if ui.button("Clear").clicked() {
                 self.waterfall_rows.clear();
@@ -2418,26 +2521,60 @@ fn spectrum_peak(freqs: &[f64], power: &[f64]) -> Option<(f64, f64)> {
     Some((power[best], freqs[best]))
 }
 
-/// Spectrum polyline + peak marker, painted into an exact-size rect.
+/// Spectrum polyline + dB grid + area fill + peak marker + hover crosshair.
 fn spectrum_canvas(ui: &mut egui::Ui, freqs: &[f64], power: &[f64]) {
-    let (rect, _) = ui.allocate_exact_size(
+    let (rect, response) = ui.allocate_exact_size(
         egui::vec2(ui.available_width().max(200.0), 220.0),
         egui::Sense::hover(),
     );
     let painter = ui.painter_at(rect);
     painter.rect_filled(rect, 6.0, egui::Color32::from_rgb(4, 10, 24));
+    painter.rect_stroke(
+        rect,
+        6.0,
+        egui::Stroke::new(1.0, egui::Color32::from_rgb(30, 58, 95)),
+        egui::StrokeKind::Inside,
+    );
+    let min_db = -120.0;
+    let max_db = 0.0;
+    let grid_stroke = egui::Stroke::new(
+        1.0,
+        egui::Color32::from_rgba_unmultiplied(148, 163, 184, 30),
+    );
+    for db_tick in [-20.0f32, -40.0, -60.0, -80.0, -100.0] {
+        let v = 1.0 - (db_tick - min_db as f32) / (max_db as f32 - min_db as f32);
+        let y = rect.top() + v * rect.height();
+        painter.line_segment(
+            [egui::pos2(rect.left(), y), egui::pos2(rect.right(), y)],
+            grid_stroke,
+        );
+        painter.text(
+            egui::pos2(rect.left() + 6.0, y - 2.0),
+            egui::Align2::LEFT_BOTTOM,
+            format!("{db_tick:.0} dB"),
+            egui::FontId::monospace(10.0),
+            SLATE,
+        );
+    }
+    let center_x = rect.center().x;
+    painter.line_segment(
+        [
+            egui::pos2(center_x, rect.top()),
+            egui::pos2(center_x, rect.bottom()),
+        ],
+        grid_stroke,
+    );
+
     if freqs.len() != power.len() || power.len() < 2 {
         painter.text(
             rect.center(),
             egui::Align2::CENTER_CENTER,
-            "No spectrum yet — Refresh spectrum",
+            "No spectrum yet - Refresh spectrum",
             egui::FontId::monospace(13.0),
             SLATE,
         );
         return;
     }
-    let min_db = -120.0;
-    let max_db = 0.0;
     let n = power.len();
     let to_pos = |i: usize| {
         let t = i as f32 / (n - 1) as f32;
@@ -2448,10 +2585,18 @@ fn spectrum_canvas(ui: &mut egui::Ui, freqs: &[f64], power: &[f64]) {
             rect.top() + v * rect.height(),
         )
     };
+    let fill_color = egui::Color32::from_rgba_unmultiplied(56, 189, 248, 28);
     let mut prev = to_pos(0);
     for i in 1..n {
         let next = to_pos(i);
-        painter.line_segment([prev, next], egui::Stroke::new(1.2, SKY));
+        if i % 4 == 0 {
+            let strip = egui::Rect::from_min_max(
+                egui::pos2(prev.x, prev.y.min(next.y)),
+                egui::pos2(next.x + 1.0, rect.bottom()),
+            );
+            painter.rect_filled(strip, 0.0, fill_color);
+        }
+        painter.line_segment([prev, next], egui::Stroke::new(1.4, SKY));
         prev = next;
     }
     if let Some((peak_db, peak_hz)) = spectrum_peak(freqs, power) {
@@ -2475,6 +2620,32 @@ fn spectrum_canvas(ui: &mut egui::Ui, freqs: &[f64], power: &[f64]) {
             egui::FontId::monospace(12.0),
             AMBER,
         );
+    }
+    if let Some(hover) = response.hover_pos() {
+        if rect.contains(hover) {
+            let t = ((hover.x - rect.left()) / rect.width()).clamp(0.0, 1.0);
+            let idx = ((t * (n - 1) as f32).round() as usize).min(n - 1);
+            let hz = freqs[idx];
+            let db = power[idx];
+            let cross = egui::Stroke::new(
+                1.0,
+                egui::Color32::from_rgba_unmultiplied(245, 158, 11, 120),
+            );
+            painter.line_segment(
+                [
+                    egui::pos2(hover.x, rect.top()),
+                    egui::pos2(hover.x, rect.bottom()),
+                ],
+                cross,
+            );
+            painter.text(
+                egui::pos2(rect.right() - 8.0, rect.top() + 8.0),
+                egui::Align2::RIGHT_TOP,
+                format!("{:+.1} kHz  {db:.1} dB", hz / 1e3),
+                egui::FontId::monospace(11.0),
+                AMBER,
+            );
+        }
     }
 }
 

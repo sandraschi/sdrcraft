@@ -133,6 +133,11 @@ pub enum Command {
     },
     /// Morse, RTTY, and APRS on practice tapes. Not a live copy of the air.
     DecodeCopy,
+    /// Encode and decode arbitrary text through Morse, RTTY, or AX.25 APRS.
+    DecodeText {
+        mode: String,
+        text: String,
+    },
 }
 
 fn ok(data: Value) -> Value {
@@ -445,6 +450,49 @@ pub async fn dispatch(cmd: Command) -> Value {
                 "aprs": aprs,
             }))
         }
+        Command::DecodeText { mode, text } => {
+            let clean = text.trim();
+            if clean.is_empty() {
+                return fail(DeviceError::InvalidInput(
+                    "text is required for decode_text".to_string(),
+                ));
+            }
+            match mode.trim().to_ascii_lowercase().as_str() {
+                "morse" | "cw" => {
+                    let env = decode::encode_morse(clean, 2_000.0, 20.0);
+                    match decode::decode_morse_envelope(&env) {
+                        Ok(decoded) => ok(json!({
+                            "success": true, "mode": "morse", "input": clean,
+                            "decoded": decoded, "samples": env.len(), "live": false
+                        })),
+                        Err(e) => fail(DeviceError::Protocol(e)),
+                    }
+                }
+                "rtty" | "baudot" => {
+                    let bits = decode::encode_rtty_bits(clean);
+                    match decode::decode_rtty_bits(&bits) {
+                        Ok(decoded) => ok(json!({
+                            "success": true, "mode": "rtty", "input": clean,
+                            "decoded": decoded, "bits": bits.len(), "live": false
+                        })),
+                        Err(e) => fail(DeviceError::Protocol(e)),
+                    }
+                }
+                "aprs" | "ax25" => {
+                    let frame = decode::encode_ax25("SDR", "APRS", clean);
+                    match decode::decode_ax25(&frame) {
+                        Ok(decoded) => ok(json!({
+                            "success": true, "mode": "aprs", "input": clean,
+                            "decoded": decoded, "bytes": frame.len(), "live": false
+                        })),
+                        Err(e) => fail(DeviceError::Protocol(e)),
+                    }
+                }
+                other => fail(DeviceError::InvalidInput(format!(
+                    "Unsupported decode mode '{other}'. Supported: morse, rtty, aprs"
+                ))),
+            }
+        }
     }
 }
 
@@ -689,6 +737,16 @@ mod tests {
         assert_eq!(
             copied.get("aprs").and_then(Value::as_str),
             Some("SDR>APRS:>hi")
+        );
+        let custom = dispatch(Command::DecodeText {
+            mode: "morse".to_string(),
+            text: "TEST 73".to_string(),
+        })
+        .await;
+        assert_eq!(custom.get("success").and_then(Value::as_bool), Some(true));
+        assert_eq!(
+            custom.get("decoded").and_then(Value::as_str),
+            Some("TEST 73")
         );
     }
 

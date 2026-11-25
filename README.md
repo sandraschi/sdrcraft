@@ -7,7 +7,7 @@ Receive-only desktop radio workstation in pure Rust (`sdrcraft-core`, `sdrcraft-
 | Area | Status | Notes |
 |---|---|---|
 | Core command bus (`sdrcraft-core`) | Implemented | 36 `Command` variants, typed errors, no panics |
-| CLI + MCP stdio (`sdrcraft-mcp`) | Implemented | 43 MCP tools (ArtCraft + legacy portmanteau aliases) |
+| CLI + MCP stdio (`sdrcraft-mcp`) | Implemented | 44 MCP tools (ArtCraft + legacy portmanteau aliases) |
 | Desktop UI (`sdrcraft-app`) | Implemented | 12-page `eframe 0.37` app, dark/light themes, kittest goldens |
 | Mock IQ + 2048-pt spectrum + waterfall | Implemented | Deterministic synthetic IQ (`MockIq`), `rustfft` spectrum, 100-line waterfall |
 | Seeded station DB + schedules | Implemented | 11 stations across LW/MW/SW/VHF/UHF |
@@ -31,6 +31,7 @@ sdrcraft/
 ├── docs/ANTENNAS.md                     # whip through rhombic, and why the first session is quiet
 ├── docs/POLICE_AND_TV.md                # scanner myth, TETRA, and why TV is a hump not a picture
 ├── docs/MORSE_TEXT_AND_HANDHELDS.md     # CW/RTTY, 1seg, PMR446, APRS and MeshCom
+├── docs/SIGNAL_ATLAS.md                 # 10 kHz to 1.7 GHz field guide (modes, antennas, HW)
 ├── docs/TUNING_RANGE.md                 # why 0.5/24 MHz, Blog v4, Airspy HF+, SDRplay
 ├── installer/installer.nsi              # current-user NSIS installer
 └── crates/

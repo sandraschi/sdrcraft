@@ -85,6 +85,13 @@ enum Cmd {
     },
     /// Copy Morse, RTTY, and APRS practice tapes (offline decoder check).
     DecodeCopy,
+    /// Round-trip text through Morse, RTTY, or AX.25 APRS encoder/decoder.
+    DecodeText {
+        #[arg(long, default_value = "morse")]
+        mode: String,
+        #[arg(long)]
+        text: String,
+    },
 }
 
 #[derive(Debug, Subcommand)]
@@ -276,6 +283,7 @@ async fn main() {
         Cmd::Assist { goal } => emit(assist_payload(&goal)),
         Cmd::Hint { topic } => emit(hint_payload(&topic)),
         Cmd::DecodeCopy => emit(dispatch(Command::DecodeCopy).await),
+        Cmd::DecodeText { mode, text } => emit(dispatch(Command::DecodeText { mode, text }).await),
     }
 }
 
@@ -514,6 +522,7 @@ fn tools_list() -> Value {
         tool("sdr.agentic_assist", "Deterministic runbook for a goal (host sampling executes it). Legacy: sdr_agentic_assist.", &[("goal", "string")], &[]),
         tool("sdr.sampling_hint", "First-tool hint for a topic. Legacy: sdr_sampling_hint.", &[("topic", "string")], &[]),
         tool("sdr.decode_copy", "Copy Morse, RTTY, and APRS practice tapes (live=false; not live air).", &[], &[]),
+        tool("sdr.decode_text", "Encode and decode text via Morse, RTTY, or APRS practice modem.", &[("mode", "string"), ("text", "string")], &["text"]),
         // -- legacy portmanteau aliases (5) --
         tool("sdr_device", "LEGACY alias: device ops via operation=list|initialize|status|health|set_frequency|set_gain|tune_preset|scan|mock_mode.", &[("operation", "string")], &[]),
         tool("sdr_spectrum", "LEGACY alias: operation=spectrum|waterfall|start_websocket|stop_websocket|websocket_status|audio_status.", &[("operation", "string")], &[]),
@@ -778,6 +787,13 @@ async fn dispatch_named(name: &str, args: &Value) -> Value {
         "sdr.gnuradio_status" => Command::GnuradioStatus,
         "sdr.gnuradio_stop" => Command::GnuradioStop,
         "sdr.decode_copy" => Command::DecodeCopy,
+        "sdr.decode_text" => match req_string(args, "text", "decode_text") {
+            Ok(text) => Command::DecodeText {
+                mode: opt_string(args, "mode").unwrap_or_else(|| "morse".to_string()),
+                text,
+            },
+            Err(message) => return err(message),
+        },
         "sdr.set_frequency" => match req_f64(args, "mhz", "set_frequency") {
             Ok(mhz) => Command::DeviceSetFreq { mhz },
             Err(message) => return err(message),
@@ -1021,10 +1037,10 @@ mod tests {
     use super::*;
 
     #[test]
-    fn catalog_lists_43_tools() {
+    fn catalog_lists_44_tools() {
         let tools = tools_list();
         let items = tools.as_array().cloned().unwrap_or_default();
-        assert_eq!(items.len(), 43);
+        assert_eq!(items.len(), 44);
         let names: Vec<String> = items
             .iter()
             .filter_map(|t| t.get("name").and_then(Value::as_str))
