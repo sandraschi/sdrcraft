@@ -33,6 +33,7 @@ sdrcraft/
 ├── docs/MORSE_TEXT_AND_HANDHELDS.md     # CW/RTTY, 1seg, PMR446, APRS and MeshCom
 ├── docs/SIGNAL_ATLAS.md                 # 10 kHz to 1.7 GHz field guide (modes, antennas, HW)
 ├── docs/TUNING_RANGE.md                 # why 0.5/24 MHz, Blog v4, Airspy HF+, SDRplay
+├── docs/RSP1B.md                        # SDRplay RSP1B install, first hour, gain, notches
 ├── installer/installer.nsi              # current-user NSIS installer
 └── crates/
     ├── sdrcraft-core/  # L1: bridge, llm (gemma4:12b), error, creds, import, decode, sdr, stations, online
@@ -56,7 +57,7 @@ Cheap USB sticks built on the **RTL2832U + R820T2** TV-tuner chip (8-bit ADC, ~2
 
 | Receiver | Coverage | ADC / Bandwidth | Notes |
 |---|---|---|---|
-| **SDRplay RSP1B** *(Recommended)* | **1 kHz - 2 GHz** | **14-bit**, up to 10 MHz | Steel shielded case, hardware preselection + AM/FM/DAB notch filters, 4.7V Bias-T. Uses proprietary SDRplay API v3 (`SoapySDRPlay3` / GNU Radio sidecar for `sdrcraft`). |
+| **SDRplay RSP1B** *(Recommended)* | **1 kHz - 2 GHz** | **14-bit**, up to 10 MHz | Steel case, automatic preselection, MW/FM and DAB notches, 4.7 V Bias-T. Hear it in SDRconnect. This window does not open it yet. Usage: [docs/RSP1B.md](docs/RSP1B.md). |
 | **Airspy HF+ Discovery** | 9 kHz - 31 MHz & 60 - 260 MHz | High-DR HF + VHF | Benchmark HF (< 31 MHz) sensitivity and blocking resistance, open drivers. **No UHF** (no 70cm/446 MHz/1090 MHz ADS-B). |
 | **RTL-SDR Blog v4** | 0.5 - 1766 MHz | 8-bit, ~2.4 MHz | Best budget stick: built-in HF direct sampling and Bias-T, still 8-bit dynamic range. |
 | **Plain R820T2 stick** (e.g. Nooelec NESDR Nano 2 Plus) | ~25 - 1750 MHz | 8-bit, ~2.4 MHz | TV-tuner heritage: deaf below ~24 MHz without a 125 MHz upconverter (Ham It Up). |
@@ -64,5 +65,6 @@ Cheap USB sticks built on the **RTL2832U + R820T2** TV-tuner chip (8-bit ADC, ~2
 
 **Antennas & Setup**:
 - **Windows RTL-SDR**: Install the WinUSB driver via Zadig and serve the stick with `rtl_tcp` on port `1234` (or use Demo Mode with no hardware connected).
+- **RSP1B**: Install SDRconnect, then plug the radio in. First listen is local FM. Longwave needs a wire. Full procedure: [docs/RSP1B.md](docs/RSP1B.md).
 - **Antennas**: Move any whip off the laptop onto a USB extension at a window. For VHF/UHF use a telescopic dipole or discone; for HF (< 24 MHz) use an outdoor/window long wire or a small indoor magnetic loop. See [docs/TUNING_RANGE.md](docs/TUNING_RANGE.md) and [docs/ANTENNAS.md](docs/ANTENNAS.md).
 

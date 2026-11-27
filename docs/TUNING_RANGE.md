@@ -39,5 +39,5 @@ Below 24 MHz is where global propagation happens, especially after dusk:
 - **Amateur radio HF bands (LSB below 10 MHz, USB at/above 10 MHz)**: 80m (3.5-3.8 MHz), 40m (7.0-7.2 MHz, CW/FT8 around 7.074 MHz), 30m (10.1-10.15 MHz, CW/digital), 20m (14.0-14.35 MHz, FT8 around 14.074 MHz, WSPR 14.0956 MHz), 15m (21.0-21.45 MHz).
 - **Utility, aviation & maritime**: Shanwick/Gander HF oceanic air traffic and VOLMET weather (e.g., 5.505, 8.957, 11.279, 13.264 MHz USB), coastal weatherfax (DDH47 Hamburg on 147.3 kHz, 3.855, 7.880, 13.8825 MHz), and 27 MHz CB (26.965-27.405 MHz).
 
-For serious HF/LW listening without an upconverter, a 14-bit native HF SDR like the **SDRplay RSP1B** (1 kHz-2 GHz, 10 MHz bandwidth, preselection filters) avoids the 8-bit dynamic-range overload that cheap sticks suffer near strong local FM/MW transmitters.
+The box for that job is the SDRplay RSP1B: 1 kHz to 2 GHz, 14-bit, automatic preselection. Hear it in SDRconnect. Install, the first FM check, the longwave wire, gain, and the notch switches are in `docs/RSP1B.md`. This window still tunes RTL sticks. It does not open the RSP1B.
 
