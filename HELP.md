@@ -20,11 +20,19 @@ A plain RTL-SDR stick stops near 25 MHz because its R820T2 tuner was built for t
 
 Cheap mini sticks use an 8-bit RTL2832U + R820T2 TV tuner chip: fine for casual FM, airband, or 1090 MHz ADS-B, but they overload near strong local transmitters and lack sensitivity on HF.
 
-- **SDRplay RSP1B (Recommended)**: 1 kHz to 2 GHz continuous, 14-bit ADC, up to 10 MHz bandwidth, steel shielded case, hardware preselection and AM/FM/DAB notch filters, and software-selectable 4.7V Bias-T. Uses proprietary SDRplay API v3 (works with SDRconnect/SDRuno natively, and via `SoapySDRPlay3` / GNU Radio sidecar for SDRCraft).
+- **SDRplay RSP1B (Recommended)**: 1 kHz to 2 GHz continuous, 14-bit ADC, up to 10 MHz bandwidth, steel case, automatic preselection, MW/FM and DAB notch filters, and a 4.7 V Bias-T that stays off unless the antenna asks for it. Listen in SDRconnect. This window does not open the radio yet. The procedure is `docs/RSP1B.md`.
 - **Airspy HF+ Discovery**: Benchmark HF (< 31 MHz) sensitivity with open drivers, covering 9 kHz-31 MHz and 60-260 MHz. No UHF (no 70cm, PMR446, or 1090 MHz ADS-B).
 - **RTL-SDR Blog v4**: Best budget stick (0.5-1766 MHz with built-in HF direct sampling and Bias-T), still 8-bit dynamic range.
 - **Plain R820T2 stick** (e.g. Nooelec NESDR Nano 2 Plus): ~25-1750 MHz only; needs a Ham It Up upconverter (+125 MHz) for HF/MW/LW.
 - **HackRF One**: 1 MHz-6 GHz 8-bit transceiver. High noise floor / weak RX sensitivity compared to RSP1B or Airspy; skip for RX-only listening.
+
+## Using the RSP1B
+
+Install SDRconnect from sdrplay.com before you plug the radio in. The installer also installs the API service. Use a USB cable that carries data. The socket on the radio is type B. Press Play. Set the sample rate to 2 MSPS so the ADC stays 14-bit. Leave IF AGC on and Bias-T off.
+
+Prove it on a local FM station: mode WFM, bandwidth about 200 kHz, somewhere in 88-108 MHz. Then hang a wire for longwave. BBC and ORF on 198 kHz are AM, 9 kHz bandwidth. The whip will not hear that. RF Notch cuts medium wave and FM, so turn it off while you are listening to those bands, and on when a local FM tower is burying shortwave. One program owns the radio. Stop SDRconnect before anything else opens it.
+
+SDRCraft's Tune button still moves an RTL-SDR stick, or the demo spectrum. It does not move the RSP1B. Morse and FT8 from this radio go out of SDRconnect into fldigi or WSJT-X through a virtual audio cable. Detail, gain steps, and the station table are in `docs/RSP1B.md`.
 
 ## Morse, text, and handhelds
 

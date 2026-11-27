@@ -2345,7 +2345,7 @@ impl SdrApp {
                 card_frame(ui, |ui| {
                     ui.heading("Hardware and Buying Guide");
                     ui.label("Cheap RTL2832U + R820T2 TV-tuner sticks (8-bit, ~2.4 MHz BW, e.g. Nooelec NESDR Nano 2 Plus) cover ~25-1750 MHz. They work for FM, airband, and 1090 MHz ADS-B, but overload near strong local stations.");
-                    ui.label("SDRplay RSP1B (Recommended): 1 kHz-2 GHz continuous, 14-bit ADC, up to 10 MHz bandwidth, steel shielded box, preselection + notch filters, 4.7V Bias-T (uses SDRplay API v3 / SoapySDRPlay3).");
+                    ui.label("SDRplay RSP1B (recommended): 1 kHz-2 GHz, 14-bit, automatic preselection, MW/FM and DAB notches, 4.7 V Bias-T. Hear it in SDRconnect. This window does not open it. Procedure: docs/RSP1B.md.");
                     ui.label("Airspy HF+ Discovery: benchmark HF sensitivity (9 kHz-31 MHz, 60-260 MHz, open drivers), but no UHF.");
                     ui.label("RTL-SDR Blog v4: best budget stick (0.5-1766 MHz HF direct sampling), still 8-bit dynamic range.");
                     ui.label("HackRF One: 1 MHz-6 GHz 8-bit transceiver with high noise floor; skip for RX-only listening.");
